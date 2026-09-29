@@ -177,7 +177,7 @@ Each phase ends with passing tests and is committed separately.
 | – | `whiteboard_entities` | **Removed** (see §2). |
 | – | Whiteboard sidecar approach | **Approved** (see §2). |
 
-Implementation status: 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
+Implementation status: 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
 requires operator + reason and a typed confirmation, clears TOTP and codes, audits `auth.mfa.reset`, emails the tutor).
 
 Still open (housekeeping): make `main` the default branch on GitHub; decide whether to add PHPStan as a CI-only step.

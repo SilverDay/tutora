@@ -78,3 +78,5 @@ input[type=file] { display: block; margin-top: 4px; }
 .wb-tool[aria-pressed="true"] { background: var(--accent); color: #fff; }
 .wb-canvas { display: block; border: 1px solid var(--border); border-radius: 6px; touch-action: none; background: #fff; cursor: crosshair; }
 .wb-status { display: block; margin-top: 4px; }
+.totp-qr { display: block; width: 205px; max-width: 100%; height: auto; image-rendering: pixelated; margin: .5rem 0 1rem; background: #fff; }
+.totp-qr[hidden] { display: none; }

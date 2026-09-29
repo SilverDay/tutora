@@ -23,7 +23,7 @@ async function tokenFromOutbox(outbox, email) {
 }
 
 /** Signup -> email link (+ password) -> TOTP enrolment -> dashboard. */
-export async function signUpTutor(page, base, outbox, email, password = 'a long enough passphrase') {
+export async function signUpTutor(page, base, outbox, email, password = 'a long enough passphrase', onEnrollPage = null) {
   await page.goto(base + '/signup');
   await page.fill('[name=display_name]', 'Tutor');
   await page.fill('[name=email]', email);
@@ -36,6 +36,10 @@ export async function signUpTutor(page, base, outbox, email, password = 'a long 
   await page.fill('[name=password]', password);
   await page.click('#verify-form button');
   await page.waitForURL(base + '/login/enroll');
+  // QR code drawn client-side from the otpauth URI (owner decision 2a)
+  await page.waitForSelector('#totp-qr:not([hidden])');
+  if ((await page.$eval('#totp-qr', (c) => c.width)) < 100) throw new Error('QR canvas not drawn');
+  if (onEnrollPage) await onEnrollPage(page);
   await page.fill('[name=code]', totp(await page.textContent('p.secret code')));
   await page.click('form[action="/login/enroll"] button');
   // recovery codes are shown once, then the tutor continues to the dashboard
