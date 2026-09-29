@@ -1,5 +1,4 @@
 # Development environment (spec: Deployment & Infrastructure).
-# Services for later phases (relay, whiteboard, converter) are added as they are implemented.
 services:
   app:        # PHP 8.3 + Apache
     build: ./app
@@ -28,6 +27,46 @@ services:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       retries: 20
+
+  relay:      # Go WebSocket relay
+    build: ./relay
+    environment:
+      RELAY_PUBLIC_ADDR: 0.0.0.0:8090
+      RELAY_INTERNAL_ADDR: 0.0.0.0:8081   # reachable only on the compose network (not published)
+      RELAY_TOKEN_KEY: ${RELAY_TOKEN_KEY}
+      RELAY_INTERNAL_SECRET: ${RELAY_INTERNAL_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    ports:
+      - "127.0.0.1:8090:8090"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  whiteboard: # Node y-protocols sidecar (collaborative whiteboard / annotate)
+    build: ./whiteboard
+    environment:
+      WHITEBOARD_PUBLIC_ADDR: 0.0.0.0:8091
+      WHITEBOARD_INTERNAL_ADDR: 0.0.0.0:8082   # compose network only (not published)
+      WHITEBOARD_TOKEN_KEY: ${WHITEBOARD_TOKEN_KEY}
+      WHITEBOARD_INTERNAL_SECRET: ${WHITEBOARD_INTERNAL_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      STORAGE_PATH: /var/lib/tutora
+    ports:
+      - "127.0.0.1:8091:8091"
+    volumes:
+      - storage:/var/lib/tutora
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  converter:  # LibreOffice + poppler-utils image; the daemon starts ONE container per job
+    build: ./converter
+    image: tutora-converter:latest
+    network_mode: none
+    profiles: ["build-only"]   # built by `docker compose build converter`, never started as a service
+    # per-job runtime profile (network none, non-root, cap_drop ALL, no-new-privileges,
+    # read-only rootfs, job mounts, pids/memory/CPU limits, external timeout) is applied by
+    # app/src/Slides/DockerConverterRunner.php when the daemon runs a job
 
 volumes:
   dbdata:

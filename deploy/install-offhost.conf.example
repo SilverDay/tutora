@@ -1,0 +1,12 @@
+# Configuration for deploy/install-offhost.sh (off-host backup restore machine). KEY=VALUE,
+# parsed, never executed. Keep it root-only (mode 0600).
+
+# User id of the backup key pair generated here (the private key never leaves this machine)
+BACKUP_KEY_EMAIL=backup@example.org
+
+# Fill in after the production install (then re-run this script):
+# host name of the production server, as used for SSH
+PRODUCTION_HOST=
+# production's SSH host key, verbatim from /etc/ssh/ssh_host_ed25519_key.pub on that server
+# (pinned: no trust-on-first-use)
+PRODUCTION_SSH_HOST_KEY=

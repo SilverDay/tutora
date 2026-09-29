@@ -1,0 +1,27 @@
+# Daily encrypted backup (DB dump + storage archive + SHA-256 manifest, 14-day retention),
+# followed by the on-host verification (checksums, encrypted to the right key). The private key
+# is kept off-host (owner decision 22): the full restore test runs on the off-host restore
+# machine (deploy/offhost). A failure fails the unit; add alerting via an OnFailure= drop-in.
+[Unit]
+Description=Tutora encrypted backup and verification
+After=mariadb.service
+
+[Service]
+Type=oneshot
+User=tutora-backup
+Group=tutora-backup
+EnvironmentFile=/etc/tutora/backup.env
+ExecStart=/var/www/tutora/deploy/backup/tutora-backup.sh
+ExecStart=/var/www/tutora/deploy/backup/tutora-backup-verify.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+# backups, and the GnuPG home (public key only; gpg writes its trustdb/lock files there)
+ReadWritePaths=/var/backups/tutora /var/lib/tutora-backup
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077

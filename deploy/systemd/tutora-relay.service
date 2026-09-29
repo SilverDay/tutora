@@ -1,0 +1,32 @@
+# Tutora realtime relay (Go). Listens on loopback only; Apache proxies /ws to it.
+# /etc/tutora/relay.env: RELAY_TOKEN_KEY, RELAY_INTERNAL_SECRET, ALLOWED_ORIGINS
+# (optional RELAY_PUBLIC_ADDR / RELAY_INTERNAL_ADDR, defaults 127.0.0.1:8090 / :8081).
+[Unit]
+Description=Tutora realtime relay
+After=network-online.target
+
+[Service]
+Type=simple
+User=tutora-relay
+Group=tutora-relay
+EnvironmentFile=/etc/tutora/relay.env
+ExecStart=/usr/local/bin/tutora-relay
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

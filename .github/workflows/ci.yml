@@ -41,4 +41,106 @@ jobs:
       - run: composer install --no-interaction --no-progress
       - name: Lint
         run: find src public bin tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Static analysis (PHPStan level 8)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
       - run: vendor/bin/phpunit
+
+  backup:
+    # deploy/backup: encrypted backup + on-host verify (public key only) + off-host pull and full
+    # restore test (private key), with the grants from deploy/README.md, run with the MariaDB
+    # client tools of the server's own image
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_DATABASE: tutora
+          MARIADB_USER: tutora
+          MARIADB_PASSWORD: tutora_dev
+          # ephemeral CI container only
+          MARIADB_ROOT_PASSWORD: ci_root_only
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql, sodium, mbstring
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+        working-directory: app
+      - name: Create the schema
+        working-directory: app
+        env: { DB_HOST: 127.0.0.1, DB_NAME: tutora, DB_USER: tutora, DB_PASSWORD: tutora_dev }
+        run: php bin/migrate.php
+      - name: Backup and restore test
+        run: |
+          mkdir -p "$RUNNER_TEMP/storage/slides" && echo test > "$RUNNER_TEMP/storage/slides/x.png"
+          docker run --rm --network host -v "$PWD:/repo:ro" -v "$RUNNER_TEMP/storage:/storage:ro" \
+            -e DB_HOST=127.0.0.1 -e DB_ADMIN_USER=root -e DB_ADMIN_PASSWORD=ci_root_only \
+            -e DB_NAME=tutora -e STORAGE_PATH=/storage -e MIGRATIONS_DIR=/repo/app/migrations mariadb:10.11 bash -c \
+            'rm -f /etc/apt/sources.list.d/mariadb* && apt-get update -qq && apt-get install -y -qq gpg-agent rsync > /dev/null && bash /repo/deploy/backup/ci-backup-test.sh'
+
+  deploy-scripts:
+    # static checks of the installer and backup scripts (they run as root on production)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: command -v shellcheck || (sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck)
+      - run: for f in deploy/*.sh deploy/backup/*.sh; do bash -n "$f"; done
+      - run: cd deploy && shellcheck -x -S warning install.sh install-offhost.sh lib.sh backup/*.sh
+      - run: systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer deploy/offhost/*.service deploy/offhost/*.timer 2>&1 | grep -v 'is not executable' | (! grep .)
+
+  relay:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l .)"
+      - run: go test -race -count=1 ./...
+
+  converter:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build converter image
+        run: docker build -t tutora-converter:ci converter
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql, sodium, mbstring, curl
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+        working-directory: app
+      - name: Sandboxed conversion tests (real container)
+        working-directory: app
+        env:
+          TUTORA_TEST_CONVERTER_IMAGE: tutora-converter:ci
+        run: vendor/bin/phpunit --filter DockerConverterRunnerTest --fail-on-skipped
+
+  whiteboard:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: whiteboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: whiteboard/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - name: Committed client bundle matches its source
+        run: npm run build:client && git diff --exit-code -- ../app/public/assets/whiteboard.bundle.js

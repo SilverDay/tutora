@@ -1,0 +1,41 @@
+# Tutora slide conversion daemon.
+# Owner decision 7: the converter runs its containers through a ROOTLESS runtime owned by this
+# dedicated service user (rootless Docker or rootless Podman). It is deliberately NOT in the
+# `docker` group — access to a rootful Docker socket is equivalent to root on the host.
+# Setup steps: deploy/README.md ("Rootless container runtime").
+[Unit]
+Description=Tutora slide conversion daemon
+After=network-online.target mariadb.service
+
+[Service]
+Type=simple
+User=tutora-converter
+Group=tutora-converter
+WorkingDirectory=/var/www/tutora/app
+# CONVERTER_RUNTIME (docker|podman) comes from the app .env; the runtime connection settings
+# (DOCKER_HOST=unix:///run/user/<uid>/docker.sock, or XDG_RUNTIME_DIR=/run/user/<uid> for Podman)
+# from this file:
+EnvironmentFile=/etc/tutora/converter.env
+ExecStart=/usr/bin/php8.3 bin/conversion-daemon.php
+Restart=always
+RestartSec=2
+# hardening of the daemon itself (the containers have their own sandbox profile)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+# ProtectHome=yes would also make /run/user inaccessible, where the rootless runtime lives;
+# hide the real home directories explicitly instead
+ProtectHome=no
+InaccessiblePaths=-/home -/root
+# app storage, the service user's home (outside /home; rootless container storage) and its
+# runtime directory (rootless runtime socket / Podman state)
+ReadWritePaths=/var/lib/tutora /var/lib/tutora-converter -/run/user
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

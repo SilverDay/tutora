@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly Tutora maintenance (auto-end after 24 h, retention purge)
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
