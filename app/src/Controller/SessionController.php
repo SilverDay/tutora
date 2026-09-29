@@ -24,6 +24,7 @@ use Tutora\Whiteboard\WhiteboardModeration;
 use Tutora\Whiteboard\WhiteboardService;
 use Tutora\Ai\AiLimitReached;
 use Tutora\Ai\AiUnavailable;
+use Tutora\Ai\SummaryNotShareable;
 use Tutora\Ai\SummaryService;
 use Tutora\Slides\SlideImportService;
 use Tutora\View\View;
@@ -87,7 +88,13 @@ final class SessionController
     public function shareSummary(Request $r, TenantContext $t): Response
     {
         $id = $r->intParam('id');
-        return $this->act($id, fn (): bool => $this->summaries->share($this->tenantDb, $id, self::intInput($r, 'block')));
+        return $this->act($id, function () use ($r, $id): bool {
+            try {
+                return $this->summaries->share($this->tenantDb, $id, self::intInput($r, 'block'));
+            } catch (SummaryNotShareable) {
+                throw new ActionFailed('ai_too_few');
+            }
+        });
     }
 
     /** Shows a block's hidden results to participants (owner decision 11). */
@@ -181,6 +188,7 @@ final class SessionController
         'ai_disabled' => 'AI summaries are not enabled on this server.',
         'ai_failed' => 'The summary could not be generated. Please try again later.',
         'ai_quota' => 'The AI quota for this month is used up.',
+        'ai_too_few' => 'A summary can only be shared if it is based on at least ' . SummaryService::MIN_RESPONSES_TO_SHARE . ' responses.',
         'ai_session_cap' => 'The daily limit of AI summaries for this session is reached.',
         'quiz_open' => 'Reveal the open question before starting another, and each question can only be run once.',
     ];

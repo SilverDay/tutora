@@ -42,10 +42,21 @@ await p1.waitForTimeout(800);
 if (await p1.locator('[data-testid=shared-summary]').count() !== 0) throw new Error('summary visible before sharing');
 step('participants do not see an unshared summary');
 
+if (!(await tutor.isVisible('[data-testid=summary-not-shareable]'))) throw new Error('2-response summary offered for sharing');
+if (await tutor.locator('button:has-text("Share summary with participants")').count() !== 0) throw new Error('share button shown below the minimum');
+step('summary of 2 responses cannot be shared (minimum 3)');
+
+const p3 = await mk('p3');
+await p3.fill('.activity textarea', 'Rotation of refresh tokens'); await p3.click('.activity button[type=submit]');
+await p3.waitForFunction(() => document.getElementById('feedback').textContent === 'Response sent.');
+await tutor.waitForFunction(() => document.querySelectorAll('.response-text').length === 3, null, { timeout: 5000 });
+await tutor.click('[data-testid=ai-summary] button:has-text("Regenerate AI summary")');
+await tutor.waitForURL(/\/sessions\/\d+$/);
+await tutor.waitForFunction(() => document.querySelector('[data-testid=ai-summary] .summary-text')?.textContent.includes('3 responses'), null, { timeout: 5000 });
 await tutor.click('[data-testid=ai-summary] button:has-text("Share summary with participants")');
 await tutor.waitForSelector('[data-testid=summary-shared]');
-for (const p of [p1, p2]) await p.waitForSelector('[data-testid=shared-summary]', { timeout: 5000 });
-step('shared: both participants received the summary live');
+for (const p of [p1, p2, p3]) await p.waitForSelector('[data-testid=shared-summary]', { timeout: 5000 });
+step('with 3 responses: shared, all participants received the summary live');
 for (const p of [p1, p2]) {
   const body = await p.textContent('body');
   if (body.includes('Token lifetimes and rotation') && p === p1) throw new Error('other participant response leaked');

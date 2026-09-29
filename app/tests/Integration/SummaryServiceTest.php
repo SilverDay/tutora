@@ -13,6 +13,7 @@ use Tutora\Activity\WallService;
 use Tutora\Ai\AiLimitReached;
 use Tutora\Ai\AiUnavailable;
 use Tutora\Ai\StubSummaryProvider;
+use Tutora\Ai\SummaryNotShareable;
 use Tutora\Ai\SummaryPrompt;
 use Tutora\Ai\SummaryService;
 use Tutora\Audit\AuditLog;
@@ -129,7 +130,7 @@ final class SummaryServiceTest extends TestCase
 
     public function testSharingIsExplicitAndRegenerationUnshares(): void
     {
-        $this->respond('alpha answer');
+        $this->respond('alpha answer', 'beta answer', 'gamma answer');
         $svc = $this->service(new StubSummaryProvider());
         $states = new BlockStates($this->submissions, new WallService($this->pdo, $this->clock, $this->bc, $this->live->participants),
             new QuizService($this->pdo, $this->clock, $this->bc, $this->live->participants), $svc);
@@ -143,7 +144,7 @@ final class SummaryServiceTest extends TestCase
         self::assertStringNotContainsString('alpha answer', json_encode($state), 'raw responses never in participant state');
 
         self::assertTrue($svc->share($this->live->tenantDb, $sid, $bid));
-        self::assertStringContainsString('1 responses', (string) $states->forParticipant($p, $bid, BlockType::Write)['summary']);
+        self::assertStringContainsString('3 responses', (string) $states->forParticipant($p, $bid, BlockType::Write)['summary']);
         self::assertTrue($svc->forTutor($sid, $bid)['shared']);
 
         $svc->generate($this->live->tenantDb, $sid, $bid, null);
@@ -242,5 +243,40 @@ final class SummaryServiceTest extends TestCase
         // control and bidi characters removed; markup kept as plain text (escaped when rendered)
         self::assertSame("- okevil <img src=x onerror=alert(1)>\n- next", $t['summary']);
         self::assertSame(SummaryService::MAX_SUMMARY_CHARS + 1, mb_strlen(SummaryService::sanitize(str_repeat('z', 5000))));
+    }
+
+    /** Owner decision: sharing needs a summary based on at least 3 responses. */
+    public function testSharingNeedsAtLeastThreeResponses(): void
+    {
+        [$sid, $bid] = [$this->live->sessionId, $this->live->blocks[0]];
+        $svc = $this->service(new StubSummaryProvider());
+        $this->respond('one', 'two');
+        $svc->generate($this->live->tenantDb, $sid, $bid, null);
+        self::assertFalse($svc->forTutor($sid, $bid)['shareable']);
+        $other = new TenantDb($this->pdo, TenantContext::forAuthenticatedTutor(Fixtures::tenant($this->pdo, 'other@example.org')));
+        self::assertFalse($svc->share($other, $sid, $bid), 'other tenant: plain refusal, no information about the count');
+        $sent = count($this->bc->sent);
+        try {
+            $svc->share($this->live->tenantDb, $sid, $bid);
+            self::fail('expected SummaryNotShareable');
+        } catch (SummaryNotShareable) {
+        }
+        self::assertCount($sent, $this->bc->sent, 'nothing broadcast');
+        self::assertFalse($svc->forTutor($sid, $bid)['shared']);
+
+        $this->respond('three');
+        self::assertFalse($svc->forTutor($sid, $bid)['shareable'], 'based on the responses in the summary, not current ones');
+        $svc->generate($this->live->tenantDb, $sid, $bid, null);
+        self::assertTrue($svc->forTutor($sid, $bid)['shareable']);
+        self::assertTrue($svc->share($this->live->tenantDb, $sid, $bid));
+    }
+
+    public function testSharingCountsOnlyResponsesSentToTheModel(): void
+    {
+        $this->respond(str_repeat('a', 30), str_repeat('b', 30), str_repeat('c', 30));
+        $svc = $this->service(new StubSummaryProvider(), maxChars: 70); // only 2 of 3 fit
+        $svc->generate($this->live->tenantDb, $this->live->sessionId, $this->live->blocks[0], null);
+        $this->expectException(SummaryNotShareable::class);
+        $svc->share($this->live->tenantDb, $this->live->sessionId, $this->live->blocks[0]);
     }
 }

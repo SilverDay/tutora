@@ -30,6 +30,12 @@ final class SummaryService
 {
     public const MAX_SUMMARY_CHARS = 4000;
 
+    /**
+     * Owner decision (2026-09-29): a summary can be shared with the group only if it is based
+     * on at least this many responses; with fewer, it would effectively reveal individual answers.
+     */
+    public const MIN_RESPONSES_TO_SHARE = 3;
+
     public function __construct(
         private readonly PDO $pdo,
         private readonly Clock $clock,
@@ -115,16 +121,24 @@ final class SummaryService
         return true;
     }
 
-    /** Shares the current summary with the participants (explicit tutor action). */
+    /**
+     * Shares the current summary with the participants (explicit tutor action).
+     *
+     * @throws SummaryNotShareable if it is based on fewer than MIN_RESPONSES_TO_SHARE responses
+     */
     public function share(TenantDb $tenant, int $sessionId, int $blockId): bool
     {
         // tenant-scoped existence check first (an UPDATE that changes nothing reports 0 rows)
-        if ($tenant->one(
-            'SELECT ws.session_block_id FROM write_summaries ws JOIN sessions s ON s.id = ws.session_id
+        $row = $tenant->one(
+            'SELECT ws.responses_used FROM write_summaries ws JOIN sessions s ON s.id = ws.session_id
              WHERE ws.session_block_id = :bid AND s.id = :sid AND s.tenant_id = :tenant_id',
             ['bid' => $blockId, 'sid' => $sessionId],
-        ) === null) {
+        );
+        if ($row === null) {
             return false;
+        }
+        if ((int) $row['responses_used'] < self::MIN_RESPONSES_TO_SHARE) {
+            throw new SummaryNotShareable('too_few_responses');
         }
         $tenant->run(
             'UPDATE write_summaries ws JOIN sessions s ON s.id = ws.session_id
@@ -136,7 +150,7 @@ final class SummaryService
         return true;
     }
 
-    /** @return array{enabled:bool, summary:?string, responses_total:?int, responses_used:?int, generated_at:?string, shared:bool} */
+    /** @return array{enabled:bool, summary:?string, responses_total:?int, responses_used:?int, generated_at:?string, shared:bool, shareable:bool, min_to_share:int} */
     public function forTutor(int $sessionId, int $blockId): array
     {
         $row = $this->summaryRow($sessionId, $blockId);
@@ -147,6 +161,8 @@ final class SummaryService
             'responses_used' => $row === null ? null : (int) $row['responses_used'],
             'generated_at' => $row === null ? null : (string) $row['generated_at'],
             'shared' => $row !== null && $row['shared_at'] !== null,
+            'shareable' => $row !== null && (int) $row['responses_used'] >= self::MIN_RESPONSES_TO_SHARE,
+            'min_to_share' => self::MIN_RESPONSES_TO_SHARE,
         ];
     }
 

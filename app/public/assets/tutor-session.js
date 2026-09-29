@@ -70,7 +70,10 @@ function render(block) {
         el('p', { class: 'muted', text: `Based on ${s.ai.responses_used} of ${s.ai.responses_total} responses.` }),
         s.ai.shared
           ? el('p', { class: 'muted', 'data-testid': 'summary-shared', text: 'Shared with participants.' })
-          : postForm(`/sessions/${encodeURIComponent(sessionId)}/ai/summary/share`, { block: String(block.id) }, 'Share summary with participants'));
+          : s.ai.shareable
+            ? postForm(`/sessions/${encodeURIComponent(sessionId)}/ai/summary/share`, { block: String(block.id) }, 'Share summary with participants')
+            : el('p', { class: 'muted', 'data-testid': 'summary-not-shareable',
+              text: `Sharing needs a summary based on at least ${s.ai.min_to_share} responses, so that individual answers are not revealed.` }));
     }
     if (s.ai.enabled && (s.responses?.length ?? 0) > 0) {
       box.append(postForm(`/sessions/${encodeURIComponent(sessionId)}/ai/summary`, { block: String(block.id) },

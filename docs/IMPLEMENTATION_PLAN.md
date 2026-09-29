@@ -186,6 +186,9 @@ Each phase ends with passing tests and is committed separately.
 | 13 | Moderation scope | **Quiz answers are kept** when removing a participant's contributions. |
 | 14 | Slide rasterisation | **1920 px longest side** (not fixed DPI). |
 | 15 | Converter base image | **Ubuntu 24.04.** |
+| 16 | AI summary sharing | **Only if based on ≥ 3 responses** (`SummaryService::MIN_RESPONSES_TO_SHARE`; counted on the responses actually sent to the model), so a shared summary cannot reveal an individual answer. |
+| 17 | AI limits | **Defaults kept:** 200 calls and 500 000 tokens per tenant per UTC month; 10 calls per session per UTC day (all configurable in `.env`). |
+| 18 | "Hide results" scope | **Confirmed:** aggregate block types only; not Wall (shared content) and not Quiz (own reveal). |
 | – | `whiteboard_entities` | **Removed** (see §2). |
 | – | Whiteboard sidecar approach | **Approved** (see §2). |
 
