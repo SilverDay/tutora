@@ -13,11 +13,18 @@ namespace Tutora\Slides;
  *   default (or configured) seccomp profile · optional AppArmor profile ·
  *   wall-clock timeout enforced out here, not inside the container.
  *
+ * The container is created first ("create", waited for) and only then started ("start -a")
+ * under the job timeout, so a timeout can never race container creation: the container
+ * always exists when it is removed by name, on every exit path.
+ *
  * The command is an argv array (no shell). Container output is discarded so document
  * content never reaches logs.
  */
 final class DockerConverterRunner implements ConverterRunner
 {
+    /** Upper bound for "create" alone (image is local; this is only a hang guard). */
+    private const CREATE_TIMEOUT_SECONDS = 60;
+
     public function __construct(
         private readonly string $image,
         private readonly string $runtime = 'docker',
@@ -38,11 +45,11 @@ final class DockerConverterRunner implements ConverterRunner
         return $this->user;
     }
 
-    /** @return list<string> */
+    /** @return list<string> the "create" argv carrying the complete sandbox profile */
     public function command(string $name, string $inDir, string $outDir, int $maxPages): array
     {
         $argv = [
-            $this->runtime, 'run', '--rm', '--name', $name,
+            $this->runtime, 'create', '--name', $name,
             '--network', 'none',
             '--user', $this->user,
             '--cap-drop', 'ALL',
@@ -74,42 +81,61 @@ final class DockerConverterRunner implements ConverterRunner
             }
         }
         $name = 'tutora-conv-' . bin2hex(random_bytes(8));
-        $null = ['file', '/dev/null', 'w'];
-        $proc = proc_open($this->command($name, $inDir, $outDir, $maxPages), [0 => ['file', '/dev/null', 'r'], 1 => $null, 2 => $null], $pipes);
-        if (!is_resource($proc)) {
-            return new ConverterResult(125);
+        try {
+            $created = $this->wait($this->command($name, $inDir, $outDir, $maxPages), microtime(true) + self::CREATE_TIMEOUT_SECONDS);
+            if ($created === null) {
+                return new ConverterResult(124, true);
+            }
+            if ($created !== 0) {
+                return new ConverterResult(125);
+            }
+            $exit = $this->wait([$this->runtime, 'start', '-a', $name], microtime(true) + $timeoutSeconds);
+            return $exit === null ? new ConverterResult(124, true) : new ConverterResult($exit);
+        } finally {
+            // killing the CLI would not stop the container: always remove it by name
+            $this->ensureRemoved($name);
         }
-        $deadline = microtime(true) + $timeoutSeconds;
+    }
+
+    /**
+     * Runs a runtime CLI command with a deadline.
+     *
+     * @param list<string> $argv
+     * @return int|null exit code (125 if it could not be started), null on timeout
+     */
+    private function wait(array $argv, float $deadline): ?int
+    {
+        $null = ['file', '/dev/null', 'w'];
+        $proc = proc_open($argv, [0 => ['file', '/dev/null', 'r'], 1 => $null, 2 => $null], $pipes);
+        if (!is_resource($proc)) {
+            return 125;
+        }
         while (true) {
             $status = proc_get_status($proc);
             if (!$status['running']) {
                 proc_close($proc);
-                return new ConverterResult((int) $status['exitcode']);
+                return (int) $status['exitcode'];
             }
             if (microtime(true) >= $deadline) {
-                // killing the CLI would not stop the container: remove it by name
-                $this->exec([$this->runtime, 'rm', '-f', $name]);
                 proc_terminate($proc);
                 proc_close($proc);
-                $this->ensureRemoved($name);
-                return new ConverterResult(124, true);
+                return null;
             }
             usleep(100_000);
         }
     }
 
     /**
-     * Defensive: if the timeout fired while the CLI was still creating the container, a
-     * first "rm -f" can precede the container's existence. Retry until the runtime no
-     * longer knows the name (bounded).
+     * Removes the container and verifies it is gone (bounded retries). Only the "create"
+     * hang guard can leave the runtime still creating it, which the retries cover.
      */
     private function ensureRemoved(string $name): void
     {
         for ($i = 0; $i < 20; $i++) {
+            $this->exec([$this->runtime, 'rm', '-f', $name]);
             if ($this->exec([$this->runtime, 'container', 'inspect', $name]) !== 0) {
                 return;
             }
-            $this->exec([$this->runtime, 'rm', '-f', $name]);
             usleep(250_000);
         }
     }

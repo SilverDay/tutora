@@ -62,18 +62,22 @@ final class DockerConverterRunnerTest extends TestCase
     }
 
     /**
-     * A 0 s budget always expires while the container is starting, so this deterministically
-     * exercises the external timeout and the cleanup path (independent of runner speed).
+     * A 0 s budget always expires right after "start", so this deterministically exercises
+     * the external timeout and the cleanup path (independent of runner speed). Repeated
+     * because the earlier implementation leaked a created-but-never-started container
+     * only occasionally (race between killing "docker run" and container creation).
      */
     public function testWallClockTimeoutRemovesContainer(): void
     {
         copy(__DIR__ . '/../fixtures/sample.pptx', $this->dir . '/in/source.pptx');
         chmod($this->dir . '/in/source.pptx', 0644);
-        $start = microtime(true);
-        $r = (new DockerConverterRunner($this->image))->run($this->dir . "/in", $this->dir . "/out", 0, 50);
-        self::assertTrue($r->timedOut);
-        self::assertLessThan(15, microtime(true) - $start);
+        for ($i = 0; $i < 5; $i++) {
+            $start = microtime(true);
+            $r = (new DockerConverterRunner($this->image))->run($this->dir . "/in", $this->dir . "/out", 0, 50);
+            self::assertTrue($r->timedOut);
+            self::assertLessThan(15, microtime(true) - $start);
+        }
         $left = shell_exec("docker ps -a --filter name=tutora-conv- --format '{{.Names}}'");
-        self::assertSame('', trim((string) $left), 'no converter container left running');
+        self::assertSame('', trim((string) $left), 'no converter container left behind (any state)');
     }
 }
