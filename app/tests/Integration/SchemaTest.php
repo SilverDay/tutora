@@ -71,6 +71,11 @@ final class SchemaTest extends TestCase
         self::assertSame(0, (int) $pdo->query('SELECT COUNT(*) FROM session_blocks')->fetchColumn());
     }
 
+    public function testUnusedWhiteboardEntitiesTableIsAbsent(): void
+    {
+        self::assertFalse(TestDatabase::pdo()->query("SHOW TABLES LIKE 'whiteboard_entities'")->fetchColumn());
+    }
+
     public function testMigrationSplitterIgnoresComments(): void
     {
         self::assertSame(['CREATE TABLE a (x INT)', 'SELECT 1'], Migrator::splitStatements("-- c;\nCREATE TABLE a (x INT);\n  -- y;\nSELECT 1;\n"));

@@ -271,24 +271,10 @@ CREATE TABLE wall_cards (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- Whiteboard (presenter-mode entities + client-captured export snapshots).
--- Yjs operational persistence for the collaborative sidecar is added in Phase 7.
+-- Whiteboard export snapshots (captured client-side by the tutor's browser).
+-- Board content itself lives in the Yjs documents of the whiteboard sidecar
+-- (collaborative/annotate) and in the relay buffer (presenter mode), not in MariaDB.
 -- ---------------------------------------------------------------------------
-CREATE TABLE whiteboard_entities (
-    entity_uuid         BINARY(16)      NOT NULL,
-    session_id          BIGINT UNSIGNED NOT NULL,
-    session_block_id    BIGINT UNSIGNED NOT NULL,
-    moderation_actor_id BINARY(16)      NOT NULL,
-    entity_type         VARCHAR(16)     NOT NULL,
-    data                JSON            NOT NULL CHECK (JSON_VALID(data)),
-    created_at          DATETIME(3)     NOT NULL,
-    PRIMARY KEY (entity_uuid),
-    KEY ix_whiteboard_entities_block (session_block_id),
-    KEY ix_whiteboard_entities_actor (session_id, moderation_actor_id),
-    CONSTRAINT fk_wb_entities_session FOREIGN KEY (session_id)                   REFERENCES sessions (id)                   ON DELETE CASCADE,
-    CONSTRAINT fk_wb_entities_block   FOREIGN KEY (session_block_id, session_id) REFERENCES session_blocks (id, session_id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 CREATE TABLE whiteboard_snapshots (
     id               BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     session_id       BIGINT UNSIGNED NOT NULL,
