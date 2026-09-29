@@ -22,18 +22,23 @@ use Tutora\Security\SecretBox;
 use Tutora\Support\FrozenClock;
 use Tutora\Tests\Support\TestDatabase;
 use Tutora\Tests\Unit\PasswordPolicyTest;
+use Tutora\Tests\Support\RecordingMailer;
+use Tutora\Auth\SignupVerification;
+use Tutora\Security\Logger;
 
 final class AuthHttpFlowTest extends TestCase
 {
     private ArraySessionStore $session;
     private FrozenClock $clock;
     private App $app;
+    private RecordingMailer $mailer;
 
     protected function setUp(): void
     {
         $pdo = TestDatabase::reset();
         $this->clock = new FrozenClock('2026-03-01 10:00:00');
         $this->session = new ArraySessionStore();
+        $this->mailer = new RecordingMailer();
         $config = Config::fromArray([
             'APP_ENV' => 'production',
             'APP_BASE_URL' => 'https://tutora.test',
@@ -50,6 +55,7 @@ final class AuthHttpFlowTest extends TestCase
             new AuditLog($pdo, $this->clock),
             $this->session,
             $this->clock,
+            new SignupVerification($pdo, $this->mailer, $this->clock, new Logger(static fn () => null), 'https://tutora.test'),
         ));
     }
 
@@ -71,6 +77,16 @@ final class AuthHttpFlowTest extends TestCase
     {
         $this->get('/signup');
         $r = $this->post('/signup', ['email' => 'k@example.org', 'display_name' => 'Klaus', 'password' => 'a long enough passphrase']);
+        self::assertSame(200, $r->status);
+        self::assertStringContainsString('Check your inbox', $r->body);
+        $link = $this->mailer->sent[0]->textBody;
+        self::assertStringContainsString('https://tutora.test/verify-email#t=', $link, 'token in the fragment, never in a logged URL');
+
+        self::assertStringContainsString('id="verify-form"', $this->get('/verify-email')->body);
+        $bad = $this->post('/verify-email', ['token' => (string) $this->mailer->tokenFor('k@example.org'), 'password' => 'wrong password here']);
+        self::assertSame(422, $bad->status);
+        self::assertStringContainsString('value="' . $this->mailer->tokenFor('k@example.org') . '"', $bad->body, 'token kept for a retry');
+        $r = $this->post('/verify-email', ['token' => (string) $this->mailer->tokenFor('k@example.org'), 'password' => 'a long enough passphrase']);
         self::assertSame(303, $r->status);
         self::assertSame('/login/enroll', $r->headers['Location']);
 

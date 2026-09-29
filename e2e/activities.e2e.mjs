@@ -1,23 +1,17 @@
 // End-to-end browser test of the tutor console and participant client against a running
 // stack (PHP app + relay + MariaDB). See e2e/README.md.
-import crypto from 'node:crypto';
+import { signUpTutor } from './lib.mjs';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const B = process.env.BASE_URL || 'http://127.0.0.1:8099';
+const OUTBOX = process.env.MAIL_OUTBOX || '/var/lib/tutora/mail-outbox';
 const EMAIL = `e2e-${Date.now()}@example.org`;
-const b32 = s => { const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = ''; for (const c of s.replace(/ /g, '')) bits += A.indexOf(c).toString(2).padStart(5, '0'); return Buffer.from(bits.match(/.{8}/g).map(b => parseInt(b, 2))); };
-const totp = (secret, offset = 0) => { const c = Buffer.alloc(8); c.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 1000 / 30) + offset)); const h = crypto.createHmac('sha1', secret).update(c).digest(); const o = h[19] & 15; return String(((h.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, '0'); };
 const problems = [];
 const watch = (page, name) => { page.on('console', m => { if (['error', 'warning'].includes(m.type())) problems.push(`${name}: ${m.text()}`); }); page.on('pageerror', e => problems.push(`${name} pageerror: ${e.message}`)); page.on('dialog', d => { problems.push(`${name} DIALOG ${d.message()}`); d.dismiss(); }); };
 const step = (m) => console.log('✓', m);
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const tutor = await (await browser.newContext()).newPage(); watch(tutor, 'tutor');
-await tutor.goto(B + '/signup');
-await tutor.fill('[name=display_name]', 'Klaus'); await tutor.fill('[name=email]', EMAIL); await tutor.fill('[name=password]', 'a long enough passphrase');
-await tutor.click('button[type=submit]');
-const secret = b32(await tutor.textContent('p.secret code'));
-await tutor.fill('[name=code]', totp(secret)); await tutor.click('form[action="/login/enroll"] button');
-await tutor.waitForURL(B + '/dashboard'); step('tutor signed up with TOTP');
+await signUpTutor(tutor, B, OUTBOX, EMAIL); step('tutor signed up (email link + password) with TOTP');
 
 await tutor.fill('[name=title]', 'E2E <i>workshop</i>'); await tutor.click('form[action="/workshops"] button');
 const blocks = [

@@ -46,6 +46,23 @@ final class AuthController
         if (!$result->ok) {
             return $this->failed('auth/signup', 'Create account', $result, ['email' => $email, 'name' => $name]);
         }
+        // identical page for new and already registered addresses
+        return $this->view->render('auth/check_inbox', ['title' => 'Check your inbox']);
+    }
+
+    public function showVerify(Request $r): Response
+    {
+        return $this->view->render('auth/verify', ['title' => 'Confirm your account', 'errors' => [], 'token' => '']);
+    }
+
+    public function verify(Request $r): Response
+    {
+        $token = (string) $r->input('token');
+        $result = $this->auth->verifySignup($token, (string) $r->input('password'), $r->clientIp);
+        if (!$result->ok) {
+            // keep the token in the form so a mistyped password can be retried
+            return $this->failed('auth/verify', 'Confirm your account', $result, ['token' => preg_match('/^[A-Za-z0-9_-]{1,100}$/', $token) === 1 ? $token : '']);
+        }
         return $this->redirectForStage($result->stage);
     }
 

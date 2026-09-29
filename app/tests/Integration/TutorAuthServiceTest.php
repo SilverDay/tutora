@@ -20,6 +20,9 @@ use Tutora\Security\SecretBox;
 use Tutora\Support\FrozenClock;
 use Tutora\Tests\Support\TestDatabase;
 use Tutora\Tests\Unit\PasswordPolicyTest;
+use Tutora\Tests\Support\RecordingMailer;
+use Tutora\Auth\SignupVerification;
+use Tutora\Security\Logger;
 
 final class TutorAuthServiceTest extends TestCase
 {
@@ -28,12 +31,14 @@ final class TutorAuthServiceTest extends TestCase
     private FrozenClock $clock;
     private ArraySessionStore $session;
     private TutorAuthService $auth;
+    private RecordingMailer $mailer;
 
     protected function setUp(): void
     {
         $this->pdo = TestDatabase::reset();
         $this->clock = new FrozenClock('2026-03-01 10:00:00');
         $this->session = new ArraySessionStore();
+        $this->mailer = new RecordingMailer();
         $this->auth = $this->service($this->session);
     }
 
@@ -48,13 +53,15 @@ final class TutorAuthServiceTest extends TestCase
             new AuditLog($this->pdo, $this->clock),
             $session,
             $this->clock,
+            new SignupVerification($this->pdo, $this->mailer, $this->clock, new Logger(static fn () => null), 'https://tutora.test'),
         );
     }
 
     /** @return string raw TOTP secret */
     private function registerAndEnrol(): string
     {
-        self::assertTrue($this->auth->register('Tutor@Example.org ', 'Klaus', self::PW, '198.51.100.1')->ok);
+        self::assertTrue($this->auth->register('Tutor@Example.org ', 'Klaus', self::PW, '198.51.100.1')->verificationPending);
+        self::assertSame(AuthStage::MfaEnrollment, $this->auth->verifySignup($this->mailer->tokenFor('tutor@example.org'), self::PW, '198.51.100.1')->stage);
         $enrol = $this->auth->beginEnrollment();
         $secret = Base32::decode($enrol['secret']);
         $code = Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp()));
@@ -62,11 +69,75 @@ final class TutorAuthServiceTest extends TestCase
         return $secret;
     }
 
-    public function testSignupRequiresMfaEnrollmentBeforeAccess(): void
+    public function testSignupRequiresEmailThenMfaBeforeAccess(): void
     {
         $r = $this->auth->register('tutor@example.org', 'Klaus', self::PW, '198.51.100.1');
+        self::assertTrue($r->verificationPending);
+        self::assertNull($r->stage, 'not signed in by signing up');
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM tenants')->fetchColumn(), 'no account before verification');
+        self::assertFalse($this->auth->login('tutor@example.org', self::PW, '198.51.100.1')->ok);
+
+        $r = $this->auth->verifySignup((string) $this->mailer->tokenFor('tutor@example.org'), self::PW, '198.51.100.1');
         self::assertSame(AuthStage::MfaEnrollment, $r->stage);
         self::assertNull($this->auth->currentTenant(), 'no tenant context before MFA');
+    }
+
+    public function testSignupResponseIsNeutralForRegisteredAddresses(): void
+    {
+        $this->registerAndEnrol();
+        $hashBefore = $this->pdo->query('SELECT password_hash FROM tenants')->fetchColumn();
+        $other = $this->service(new ArraySessionStore());
+        $r = $other->register('tutor@example.org', 'Mallory', 'another long passphrase', '203.0.113.1');
+        self::assertTrue($r->verificationPending, 'same outcome as for a new address');
+        $mail = end($this->mailer->sent);
+        self::assertStringContainsString('You already have an account', $mail->textBody);
+        self::assertStringNotContainsString('#t=', $mail->textBody, 'no verification link for existing accounts');
+        self::assertSame($hashBefore, $this->pdo->query('SELECT password_hash FROM tenants')->fetchColumn(), 'existing password untouched');
+    }
+
+    public function testVerificationLinkRequiresTheSignupPassword(): void
+    {
+        // attacker signs up with the victim's address; the victim clicks the link but cannot
+        // complete it without the attacker's password (no pre-hijacking)
+        $this->auth->register('victim@example.org', 'Mallory', 'attacker chosen passphrase', '203.0.113.9');
+        $token = (string) $this->mailer->tokenFor('victim@example.org');
+        self::assertFalse($this->auth->verifySignup($token, 'my very own passphrase', '198.51.100.1')->ok);
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM tenants')->fetchColumn());
+
+        // the victim's own signup still works independently
+        $this->auth->register('victim@example.org', 'Victim', 'my very own passphrase', '198.51.100.1');
+        $mine = (string) $this->mailer->tokenFor('victim@example.org');
+        self::assertTrue($this->auth->verifySignup($mine, 'my very own passphrase', '198.51.100.1')->ok);
+        // and every other pending signup for the address is void afterwards
+        self::assertFalse($this->service(new ArraySessionStore())->verifySignup($token, 'attacker chosen passphrase', '203.0.113.9')->ok);
+    }
+
+    public function testVerificationLinkSingleUseAndExpires(): void
+    {
+        $this->auth->register('a@example.org', 'A', self::PW, '198.51.100.1');
+        $token = (string) $this->mailer->tokenFor('a@example.org');
+        self::assertSame(hash('sha256', $token, true), $this->pdo->query('SELECT token_hash FROM pending_signups')->fetchColumn(), 'only the hash is stored');
+        $this->clock->advance('PT24H1S');
+        self::assertFalse($this->auth->verifySignup($token, self::PW, '198.51.100.1')->ok, 'expired');
+
+        $this->auth->register('b@example.org', 'B', self::PW, '198.51.100.2');
+        $t2 = (string) $this->mailer->tokenFor('b@example.org');
+        self::assertTrue($this->auth->verifySignup($t2, self::PW, '198.51.100.2')->ok);
+        self::assertFalse($this->service(new ArraySessionStore())->verifySignup($t2, self::PW, '198.51.100.2')->ok, 'single use');
+    }
+
+    public function testSignupRateLimits(): void
+    {
+        for ($i = 0; $i < TutorAuthService::SIGNUPS_PER_EMAIL_PER_HOUR; $i++) {
+            self::assertTrue($this->auth->register('flood@example.org', 'X', self::PW, '198.51.100.' . $i)->ok);
+        }
+        self::assertGreaterThan(0, $this->auth->register('flood@example.org', 'X', self::PW, '198.51.100.99')->retryAfter, 'per-address cap (mail bombing)');
+    }
+
+    public function testMailFailureKeepsResponseNeutral(): void
+    {
+        $this->mailer->fail = true;
+        self::assertTrue($this->auth->register('x@example.org', 'X', self::PW, '198.51.100.1')->verificationPending);
     }
 
     public function testFullEnrollmentAndLoginFlow(): void
@@ -164,7 +235,8 @@ final class TutorAuthServiceTest extends TestCase
         $auth = $this->service(new ArraySessionStore(), true);
         $r = $auth->register('x@example.org', 'X', self::PW, '198.51.100.1');
         self::assertFalse($r->ok);
-        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM tenants')->fetchColumn());
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM pending_signups')->fetchColumn());
+        self::assertSame([], $this->mailer->sent);
     }
 
     public function testChangePasswordRequiresCurrentPasswordAndTotp(): void
@@ -187,13 +259,10 @@ final class TutorAuthServiceTest extends TestCase
         $this->auth->login('tutor@example.org', 'wrong password here', '198.51.100.1');
         $types = $this->pdo->query('SELECT event_type FROM audit_events ORDER BY id')->fetchAll(PDO::FETCH_COLUMN);
         self::assertSame([AuditLog::SIGNUP, AuditLog::MFA_ENROLLED, AuditLog::LOGIN_SUCCESS, AuditLog::LOGIN_FAILURE], $types);
+        self::assertStringNotContainsString(self::PW, implode(' ', array_map(static fn ($m) => $m->textBody, $this->mailer->sent)), 'password never mailed');
         $details = implode(' ', array_filter($this->pdo->query('SELECT details FROM audit_events')->fetchAll(PDO::FETCH_COLUMN)));
         self::assertStringNotContainsString('wrong password', $details);
     }
 
-    public function testDuplicateSignupRejected(): void
-    {
-        $this->registerAndEnrol();
-        self::assertFalse($this->service(new ArraySessionStore())->register('TUTOR@example.org', 'Y', self::PW, '198.51.100.1')->ok);
-    }
+
 }

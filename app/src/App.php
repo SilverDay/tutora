@@ -15,6 +15,10 @@ use Tutora\Auth\HibpPasswordChecker;
 use Tutora\Auth\PasswordHasher;
 use Tutora\Auth\PasswordPolicy;
 use Tutora\Auth\SessionStore;
+use Tutora\Auth\SignupVerification;
+use Tutora\Mail\FileMailer;
+use Tutora\Mail\Mailer;
+use Tutora\Mail\SmtpMailer;
 use Tutora\Auth\TutorAccounts;
 use Tutora\Auth\TutorAuthService;
 use Tutora\Controller\AuthController;
@@ -121,6 +125,8 @@ final class App
         $r->add('POST', '/login', fn (Request $q) => $auth()->login($q));
         $r->add('GET', '/signup', fn (Request $q) => $auth()->showSignup($q));
         $r->add('POST', '/signup', fn (Request $q) => $auth()->signup($q));
+        $r->add('GET', '/verify-email', fn (Request $q) => $auth()->showVerify($q));
+        $r->add('POST', '/verify-email', fn (Request $q) => $auth()->verify($q));
         $r->add('GET', '/login/mfa', fn (Request $q) => $auth()->showMfa($q));
         $r->add('POST', '/login/mfa', fn (Request $q) => $auth()->verifyMfa($q));
         $r->add('GET', '/login/enroll', fn (Request $q) => $auth()->showEnroll($q));
@@ -381,6 +387,28 @@ final class App
             new RateLimiter($this->pdo(), $this->clock),
             new AuditLog($this->pdo(), $this->clock),
             $this->session,
+            $this->clock,
+            new SignupVerification($this->pdo(), $this->mailer(), $this->clock, $this->logger, $this->config->string('APP_BASE_URL')),
+        );
+    }
+
+    /** SMTP submission with mandatory STARTTLS (default), or a dev-only file outbox. */
+    private function mailer(): Mailer
+    {
+        if ($this->config->string('MAIL_DRIVER', 'smtp') === 'file') {
+            return new FileMailer($this->config->string('STORAGE_PATH') . '/mail-outbox', $this->config->string('SMTP_FROM'), $this->config->isProduction(), $this->clock);
+        }
+        $host = parse_url($this->config->string('APP_BASE_URL'), PHP_URL_HOST);
+        return new SmtpMailer(
+            $this->config->string('SMTP_HOST'),
+            $this->config->int('SMTP_PORT', 587),
+            $this->config->string('SMTP_USERNAME', ''),
+            $this->config->string('SMTP_PASSWORD', ''),
+            $this->config->string('SMTP_FROM'),
+            $this->config->string('SMTP_FROM_NAME', 'Tutora'),
+            $this->config->string('SMTP_HELO', is_string($host) ? $host : 'localhost'),
+            $this->config->int('SMTP_TIMEOUT', 15),
+            $this->config->string('SMTP_CAFILE', '') === '' ? null : $this->config->string('SMTP_CAFILE'),
             $this->clock,
         );
     }

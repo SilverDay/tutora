@@ -38,14 +38,23 @@ final class TutorAuthService
         private readonly AuditLog $audit,
         private readonly SessionStore $session,
         private readonly Clock $clock,
+        private readonly SignupVerification $signups,
     ) {
     }
+
+    public const SIGNUPS_PER_IP_PER_HOUR = 10;
+    public const SIGNUPS_PER_EMAIL_PER_HOUR = 5;
 
     public static function normalizeEmail(string $email): string
     {
         return mb_strtolower(trim($email), 'UTF-8');
     }
 
+    /**
+     * Starts a signup. For every valid request the outcome is the same neutral
+     * "check your inbox": new addresses get a verification link, registered addresses a
+     * neutral notice (owner decision 4b: no account enumeration at signup).
+     */
     public function register(string $email, string $displayName, string $password, string $ip): AuthResult
     {
         $email = self::normalizeEmail($email);
@@ -61,14 +70,40 @@ final class TutorAuthService
         if ($errors !== []) {
             return AuthResult::fail($errors);
         }
+        if (!$this->limiter->consume('signup-ip:' . $ip, self::SIGNUPS_PER_IP_PER_HOUR, 3600)
+            || !$this->limiter->consume('signup-email:' . $email, self::SIGNUPS_PER_EMAIL_PER_HOUR, 3600)) {
+            return AuthResult::throttled(3600);
+        }
         $errors = $this->policy->validate($password, $email);
         if ($errors !== []) {
             return AuthResult::fail($errors);
         }
-        $id = $this->accounts->create($email, $displayName, $this->hasher->hash($password));
+        // hash in every path so response timing does not reveal registered addresses
+        $hash = $this->hasher->hash($password);
+        if ($this->accounts->findByEmail($email) !== null) {
+            $this->signups->notifyExisting($email);
+        } else {
+            $this->signups->createPending($email, $displayName, $hash);
+        }
+        return AuthResult::verificationPending();
+    }
+
+    /**
+     * Completes a signup from the emailed link: token and the password chosen at signup
+     * must both match. Creates the account and continues with mandatory TOTP enrolment.
+     */
+    public function verifySignup(string $token, string $password, string $ip): AuthResult
+    {
+        $key = 'verify-fail-ip:' . $ip;
+        $wait = $this->limiter->retryAfter($key);
+        if ($wait > 0) {
+            return AuthResult::throttled($wait);
+        }
+        $pending = $this->signups->consume($token, $password, $this->hasher);
+        $id = $pending === null ? null : $this->accounts->create($pending['email'], $pending['display_name'], $pending['password_hash']);
         if ($id === null) {
-            // Known limitation: reveals that the address is registered (no email verification in v1 spec).
-            return AuthResult::fail(['An account with this email address already exists.']);
+            $this->limiter->recordFailure($key, new RateLimitPolicy(10, 2, 900));
+            return AuthResult::fail(['This link is invalid or has expired, or the password does not match.']);
         }
         $this->audit->record($id, AuditLog::SIGNUP, $ip);
         $this->enterStage($id, AuthStage::MfaEnrollment);

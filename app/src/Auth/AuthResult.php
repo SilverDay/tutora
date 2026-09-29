@@ -12,7 +12,14 @@ final class AuthResult
         public readonly ?AuthStage $stage,
         public readonly array $errors,
         public readonly int $retryAfter = 0,
+        /** signup accepted: the same neutral "check your inbox" outcome for every address */
+        public readonly bool $verificationPending = false,
     ) {
+    }
+
+    public static function verificationPending(): self
+    {
+        return new self(true, null, [], 0, true);
     }
 
     public static function stage(AuthStage $stage): self

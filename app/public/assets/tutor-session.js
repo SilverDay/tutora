@@ -76,7 +76,19 @@ function render(block) {
   }
 }
 
-async function refresh() {
+let refreshing = null;
+let refreshAgain = false;
+/** Serialised: overlapping requests collapse into one follow-up run (no stale responses win). */
+function refresh() {
+  if (refreshing) { refreshAgain = true; return refreshing; }
+  refreshing = doRefresh().finally(() => {
+    refreshing = null;
+    if (refreshAgain) { refreshAgain = false; refresh(); }
+  });
+  return refreshing;
+}
+
+async function doRefresh() {
   const res = await fetch(`/api/tutor/sessions/${encodeURIComponent(sessionId)}/state`, { credentials: 'same-origin', cache: 'no-store' });
   if (!res.ok) return;
   const s = await res.json();

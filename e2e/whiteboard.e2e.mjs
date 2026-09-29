@@ -2,11 +2,10 @@
 // collaborative drawing both ways, annotate tags, presenter mode over the relay, snapshots
 // (manual and on block exit), clear board. Verifies what the *other* browser renders by
 // sampling canvas pixels. See e2e/README.md.
-import crypto from 'node:crypto';
+import { signUpTutor } from './lib.mjs';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const B = process.env.BASE_URL || 'http://127.0.0.1:8099';
-const b32 = s => { const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'; let bits = ''; for (const c of s.replace(/ /g, '')) bits += A.indexOf(c).toString(2).padStart(5, '0'); return Buffer.from(bits.match(/.{8}/g).map(b => parseInt(b, 2))); };
-const totp = (secret) => { const c = Buffer.alloc(8); c.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000))); const h = crypto.createHmac('sha1', secret).update(c).digest(); const o = h[19] & 15; return String(((h.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, '0'); };
+const OUTBOX = process.env.MAIL_OUTBOX || '/var/lib/tutora/mail-outbox';
 const problems = [];
 // the willReadFrequently hint is triggered by this test's own getImageData pixel sampling
 const watch = (p, n) => { p.on('console', m => { if (['error', 'warning'].includes(m.type()) && !m.text().includes('willReadFrequently')) problems.push(`${n}: ${m.text()}`); }); p.on('pageerror', e => problems.push(`${n}: ${e.message}`)); };
@@ -42,11 +41,7 @@ async function click(page, scope, at) {
 
 const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {});
 const tutor = await (await browser.newContext({ viewport: { width: 1100, height: 1400 } })).newPage(); watch(tutor, 'tutor');
-await tutor.goto(B + '/signup');
-await tutor.fill('[name=display_name]', 'K'); await tutor.fill('[name=email]', `wb-${Date.now()}@example.org`); await tutor.fill('[name=password]', 'a long enough passphrase');
-await tutor.click('button[type=submit]');
-await tutor.fill('[name=code]', totp(b32(await tutor.textContent('p.secret code')))); await tutor.click('form[action="/login/enroll"] button');
-await tutor.waitForURL(B + '/dashboard');
+await signUpTutor(tutor, B, OUTBOX, `wb-${Date.now()}@example.org`);
 await tutor.fill('[name=title]', 'Boards'); await tutor.click('form[action="/workshops"] button');
 for (const [type, cfg] of [
   ['whiteboard', '{"mode":"collaborative"}'],

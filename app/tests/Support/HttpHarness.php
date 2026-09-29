@@ -22,6 +22,8 @@ use Tutora\Security\SecretBox;
 use Tutora\Support\FrozenClock;
 use Tutora\Tests\Unit\PasswordPolicyTest;
 use Tutora\Whiteboard\NullWhiteboardModeration;
+use Tutora\Auth\SignupVerification;
+use Tutora\Security\Logger;
 
 /** One browser-like client (own session store) against a fresh App instance. */
 final class HttpHarness
@@ -29,6 +31,7 @@ final class HttpHarness
     public ArraySessionStore $session;
     public App $app;
     public NullWhiteboardModeration $whiteboard;
+    public RecordingMailer $mailer;
 
     public function __construct(PDO $pdo, public FrozenClock $clock, public string $ip = '198.51.100.7')
     {
@@ -44,6 +47,7 @@ final class HttpHarness
             'STORAGE_PATH' => sys_get_temp_dir() . '/tutora-http-test-storage',
         ]);
         $this->whiteboard = new NullWhiteboardModeration();
+        $this->mailer = new RecordingMailer();
         $this->app = (new App($config, $this->session, $clock, $pdo))->withWhiteboardModeration($this->whiteboard)->withAuthService(new TutorAuthService(
             new TutorAccounts($pdo, $clock),
             new PasswordHasher(1024, 1, 1),
@@ -53,6 +57,7 @@ final class HttpHarness
             new AuditLog($pdo, $clock),
             $this->session,
             $clock,
+            new SignupVerification($pdo, $this->mailer, $clock, new Logger(static fn () => null), 'https://tutora.test'),
         ));
     }
 
@@ -84,6 +89,8 @@ final class HttpHarness
     {
         $this->get('/signup');
         $this->post('/signup', ['email' => $email, 'display_name' => 'T', 'password' => 'a long enough passphrase']);
+        $this->get('/verify-email');
+        $this->post('/verify-email', ['token' => (string) $this->mailer->tokenFor($email), 'password' => 'a long enough passphrase']);
         $page = $this->get('/login/enroll');
         preg_match('#<p class="secret"><code>([A-Z2-7 ]+)</code>#', $page->body, $m);
         $code = Totp::code(Base32::decode($m[1]), Totp::stepAt($this->clock->now()->getTimestamp()));

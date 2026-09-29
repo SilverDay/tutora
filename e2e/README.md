@@ -15,7 +15,9 @@ with TOTP, workshop authoring, a live session with two participants, every activ
 both quiz modes, live updates over the relay, Write privacy, wall moderation, and it fails
 on any console error or CSP violation.
 
-Prerequisites: PHP app, relay and MariaDB running (see the root README), with
+Prerequisites: PHP app, relay and MariaDB running (see the root README) with
+`MAIL_DRIVER=file` (the tests read verification links from `MAIL_OUTBOX`, default
+`/var/lib/tutora/mail-outbox`), with
 `HIBP_FAIL_OPEN=true` if the test machine cannot reach the HIBP API, and Playwright installed.
 
 ```sh

@@ -429,7 +429,20 @@ function renderBlock(block) {
 
 // ------------------------------------------------------------------ session lifecycle
 
-async function refresh() {
+// Refreshes are serialised: a request arriving while one is in flight schedules exactly one
+// more run afterwards, so the last completed fetch always reflects the latest server state.
+let refreshing = null;
+let refreshAgain = false;
+function refresh() {
+  if (refreshing) { refreshAgain = true; return refreshing; }
+  refreshing = doRefresh().finally(() => {
+    refreshing = null;
+    if (refreshAgain) { refreshAgain = false; refresh(); }
+  });
+  return refreshing;
+}
+
+async function doRefresh() {
   const r = await authed('GET', '/state');
   if (!r || r.status !== 200) return;
   const s = r.data;
@@ -470,8 +483,11 @@ function onRealtime(msg) {
       if (typeof msg.session_revision !== 'number' || msg.session_revision !== state.revision) refresh();
       break;
     case 'activity_aggregate_update':
-      if (state.block && msg.session_block_id === state.block.id && msg.aggregate) {
+      if (state.block && msg.session_block_id === state.block.id && msg.aggregate && !refreshing) {
         renderAggregate(document.getElementById('results'), state.block.type, state.block.config, msg.aggregate);
+      } else {
+        // block change still loading (or unknown block): re-fetch so the update is not lost
+        refresh();
       }
       break;
     case 'wall_update':

@@ -40,7 +40,7 @@ Every deviation is also marked in code comments where it matters.
 | Referrer-Policy | `same-origin` (not `no-referrer`). | With `no-referrer` browsers send `Origin: null` on same-site form POSTs, breaking the CSRF Origin check — found by the browser E2E test. |
 | Converter base image | `ubuntu:24.04` (not Debian) with LibreOffice Impress + poppler-utils. | Equally sound base; it is the image that could be built and tested end-to-end in the development sandbox (whose egress policy blocks Debian mirrors). |
 | Rasterisation size | `pdftoppm -scale-to 1920` (longest side) instead of a fixed DPI. | Spec says "fixed DPI"; a fixed pixel bound gives uniform slide quality and caps memory/CPU for decks with oversized page boxes (a resource-exhaustion vector). Easy to switch. |
-| Per-job container launch | The daemon starts one container per job via the container CLI, with the full sandbox profile applied per run and the timeout enforced outside; on timeout the container is force-removed by name. | Spec: job-specific mounts and an externally enforced wall-clock timeout imply per-job containers. **Trade-off:** the daemon user needs container-runtime access (docker group = root-equivalent on that host). Mitigations: dedicated service user, systemd hardening (see `deploy/systemd/`), rootless Docker/Podman supported via `CONVERTER_RUNTIME`. Needs owner sign-off. |
+| Per-job container launch | The daemon starts one container per job via the container CLI, with the full sandbox profile applied per run and the timeout enforced outside; on timeout the container is force-removed by name. | Spec: job-specific mounts and an externally enforced wall-clock timeout imply per-job containers. **Trade-off:** the daemon user needs container-runtime access (docker group = root-equivalent on that host). Mitigations: dedicated service user, systemd hardening (see `deploy/systemd/`), rootless Docker/Podman supported via `CONVERTER_RUNTIME`. Owner decision: rootless runtime (§6 #7). |
 | Converter output trust | Output is untrusted: only regular `page-N.png` files (no symlinks), contiguous pages, PNG signature, ≤ 20 MB, ≤ 4096 px per side, ≤ `CONVERTER_MAX_PAGES`. | A compromised converter must not be able to make PHP read host files or store non-images. |
 | LibreOffice hardening | Profile with macros disabled (`DisableMacrosExecution`, security level 3), Java off, update checks off; network is `none` anyway. | Defence in depth beyond the container boundary. |
 | Slide images | Served only through authenticated endpoints (tutor: own tenant; participant: assets used by a block of their session), `Content-Security-Policy: default-src 'none'; sandbox`. Participants load them via `fetch` + `blob:` URL (bearer auth). | Nothing converted is placed under the web root. |
@@ -155,12 +155,26 @@ Each phase ends with passing tests and is committed separately.
 | `ai_usage` → `sessions` | SET NULL | Usage/billing record must survive session purge. |
 | `audit_events` → `tenants` | RESTRICT | Audit trail is not deleted with application data. |
 
-## 6. Open items that need an owner decision later (not blocking)
+## 6. Owner decisions (2026-09-29)
 
-- **Backup retention vs. purge**: purged session data persists in backups until they rotate. Proposed statement: backups retained 14 days, so purged data is gone from all copies ≤ 30 + 14 days after session end. Needs sign-off.
-- **LLM provider / DPA / EU endpoint**: provider interface is built; no vendor wired until chosen.
-- **Size limits**: proposed defaults (configurable): display name 40 chars, Wall card 500, Write response 2000, Word Cloud word 40, Yjs message 64 KiB, upload 50 MiB.
-- **HIBP fail-open vs fail-closed** default is fail-closed; revisit if it causes signup friction.
-- **TOTP enrolment QR code**: zero-runtime-deps rules out a server-side QR library. Enrolment currently shows the base32 setup key and the `otpauth://` URI. Options: vendor a small client-side QR script (no build step) or accept manual entry.
-- **MFA recovery**: the spec mandates TOTP but defines no recovery path (lost device). Proposal: one-time recovery codes (hashed) generated at enrolment, plus an audited admin reset.
-- **Signup account enumeration**: "email already registered" is revealed at signup because v1 has no email verification. Removing it requires an email-verification flow (would also need outbound mail).
+| # | Topic | Decision |
+| --- | --- | --- |
+| 1 | HIBP unreachable | **Fail closed** (default `HIBP_FAIL_OPEN=false`). |
+| 2 | TOTP enrolment | **QR code** rendered client-side by a vendored static QR script (no build step, no runtime PHP dependency); setup key stays available for manual entry. |
+| 3 | MFA recovery | **10 one-time recovery codes** (stored hashed, shown once at enrolment, regenerable with password + TOTP) **plus an audited admin reset** (CLI). |
+| 4 | Signup enumeration | **Email verification with a neutral response** ("check your inbox") for every signup; outbound mail via **SMTP submission on port 587 with mandatory STARTTLS**, settings in `.env`. |
+| 5 | Backups vs. purge | **Backups kept 14 days**: purged session data is gone from every copy ≤ 44 days after session end (30-day retention + 14). To be stated in the privacy statement. |
+| 6 | LLM provider (Phase 8) | **Provider-neutral interface + test stub**; AI summaries stay disabled until a provider with a DPA (EU endpoint or SCCs) is configured. |
+| 7 | Converter container access | **Rootless Docker/Podman** for a dedicated service user (`CONVERTER_RUNTIME`); no `docker` group membership. |
+| 8 | Slide images after workshop deletion | **Kept while any past session still uses them**; deleted when the last referencing session is deleted/purged. |
+| 9 | Content size limits | **Accepted as proposed** (display name 40, Wall card 500, Write 2000, Word Cloud word 40, upload 50 MB, 64 KiB messages, 20 wall cards/participant, whiteboard 5000 entities/board and 500/participant). |
+| 10 | Relay / converter limits | **Accepted as proposed** until real load data exists. |
+| 11 | Participant results | **Per-block switch "hide results until I reveal them"** (default: live). |
+| 12 | Wall moves | **Participants move only their own cards.** |
+| 13 | Moderation scope | **Quiz answers are kept** when removing a participant's contributions. |
+| 14 | Slide rasterisation | **1920 px longest side** (not fixed DPI). |
+| 15 | Converter base image | **Ubuntu 24.04.** |
+| – | `whiteboard_entities` | **Removed** (see §2). |
+| – | Whiteboard sidecar approach | **Approved** (see §2). |
+
+Still open (housekeeping): make `main` the default branch on GitHub; decide whether to add PHPStan as a CI-only step.
