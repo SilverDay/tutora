@@ -76,3 +76,18 @@ jobs:
         env:
           TUTORA_TEST_CONVERTER_IMAGE: tutora-converter:ci
         run: vendor/bin/phpunit --filter DockerConverterRunnerTest --fail-on-skipped
+
+  whiteboard:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: whiteboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: whiteboard/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test

@@ -1,0 +1,22 @@
+{
+  "name": "tutora-whiteboard",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Tutora collaborative whiteboard sidecar (Yjs) and whiteboard client bundle",
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "start": "node src/main.js",
+    "test": "node --test test/*.test.js",
+    "build:client": "esbuild client/whiteboard.js --bundle --format=esm --minify --sourcemap=external --target=es2022 --outfile=../app/public/assets/whiteboard.bundle.js"
+  },
+  "dependencies": {
+    "lib0": "0.2.119",
+    "ws": "8.22.0",
+    "y-protocols": "1.0.7",
+    "yjs": "13.6.33"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}
