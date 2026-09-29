@@ -22,6 +22,7 @@ use Tutora\Tenant\TenantDb;
 use Tutora\Whiteboard\SnapshotService;
 use Tutora\Whiteboard\WhiteboardModeration;
 use Tutora\Whiteboard\WhiteboardService;
+use Tutora\Slides\SlideImportService;
 use Tutora\View\View;
 
 /** Tutor live-session console and tutor-side JSON API. */
@@ -39,6 +40,7 @@ final class SessionController
         private readonly WhiteboardService $whiteboard,
         private readonly WhiteboardModeration $whiteboardModeration,
         private readonly SnapshotService $snapshots,
+        private readonly SlideImportService $slides,
     ) {
     }
 
@@ -129,6 +131,8 @@ final class SessionController
         if (!$this->sessions->delete($r->intParam('id'), $r->clientIp)) {
             throw new HttpException(404, 'Not found');
         }
+        // slide images of deleted workshops that only this session still used
+        $this->slides->collectOrphans();
         return Response::redirect('/dashboard');
     }
 

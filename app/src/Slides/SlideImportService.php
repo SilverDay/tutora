@@ -103,19 +103,47 @@ final class SlideImportService
     }
 
     /**
-     * Removes the converted files of every import of a workshop and any still-staged
-     * uploads (called before the workshop is deleted; DB rows cascade).
+     * Removes still-staged uploads of a workshop (called before the workshop is deleted;
+     * its conversion jobs cascade). Converted images are not touched here: the imports are
+     * detached (workshop_id = NULL) and collectOrphans() decides (owner decision 8).
      */
-    public function deleteWorkshopFiles(int $workshopId): void
+    public function deleteStagedSources(int $workshopId): void
     {
-        foreach ($this->db->all('SELECT id FROM slide_imports WHERE workshop_id = :wid AND tenant_id = :tenant_id', ['wid' => $workshopId]) as $r) {
-            $this->storage->deleteImport($this->db->tenantId(), (int) $r['id']);
-        }
         $staging = $this->storage->stagingDir() . '/';
         foreach ($this->db->all('SELECT source_path FROM conversion_jobs WHERE workshop_id = :wid AND tenant_id = :tenant_id', ['wid' => $workshopId]) as $r) {
             if (str_starts_with((string) $r['source_path'], $staging)) {
                 @unlink((string) $r['source_path']);
             }
         }
+    }
+
+    /**
+     * Deletes this tenant's detached imports (workshop deleted) whose assets no session
+     * block references any more: rows first (in a transaction, locked), then the files.
+     * Called after a workshop or a session was deleted. Race-free: a detached import has
+     * no workshop blocks, so no new session can start referencing it.
+     *
+     * @return int number of imports removed
+     */
+    public function collectOrphans(): int
+    {
+        $ids = $this->db->transaction(function (TenantDb $db): array {
+            $rows = $db->all(
+                'SELECT i.id FROM slide_imports i
+                 WHERE i.tenant_id = :tenant_id AND i.workshop_id IS NULL
+                   AND NOT EXISTS (SELECT 1 FROM slide_assets a JOIN session_blocks b ON b.slide_asset_id = a.id
+                                   WHERE a.slide_import_id = i.id)
+                 FOR UPDATE',
+            );
+            $ids = array_map(static fn ($r) => (int) $r['id'], $rows);
+            foreach ($ids as $id) {
+                $db->run('DELETE FROM slide_imports WHERE id = :id AND tenant_id = :tenant_id AND workshop_id IS NULL', ['id' => $id]);
+            }
+            return $ids;
+        });
+        foreach ($ids as $id) {
+            $this->storage->deleteImport($this->db->tenantId(), $id);
+        }
+        return count($ids);
     }
 }

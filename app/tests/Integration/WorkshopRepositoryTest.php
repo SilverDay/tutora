@@ -117,8 +117,11 @@ final class WorkshopRepositoryTest extends TestCase
         $imp = (int) $this->pdo->lastInsertId();
         $this->pdo->exec("INSERT INTO slide_assets (slide_import_id, page_number, image_path, width, height) VALUES ({$imp}, 1, 'x.png', 100, 100)");
         $this->a->addBlock($w, BlockType::Slide, [], (int) $this->pdo->lastInsertId());
-        self::assertTrue($this->a->delete($w));
-        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM slide_assets')->fetchColumn());
+        self::assertTrue($this->a->delete($w), 'slide blocks (RESTRICT on assets) do not block deletion');
+        // owner decision 8: the import is detached, not deleted; SlideImportService::collectOrphans
+        // removes it once no session uses it (SlideHttpTest)
+        self::assertNull($this->pdo->query("SELECT workshop_id FROM slide_imports WHERE id = {$imp}")->fetchColumn());
+        self::assertSame(1, (int) $this->pdo->query('SELECT COUNT(*) FROM slide_assets')->fetchColumn());
     }
 
     public function testTitleValidation(): void

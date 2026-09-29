@@ -86,10 +86,12 @@ final class WorkshopController
         if ($this->workshops->find($id) === null) {
             throw new HttpException(404, 'Not found');
         }
-        $this->slides->deleteWorkshopFiles($id);
+        $this->slides->deleteStagedSources($id);
         if (!$this->workshops->delete($id)) {
             throw new HttpException(404, 'Not found');
         }
+        // slide images still used by past sessions stay (owner decision 8)
+        $this->slides->collectOrphans();
         $this->audit->record($t->tenantId, AuditLog::WORKSHOP_DELETED, $r->clientIp, ['workshop_id' => $id]);
         return Response::redirect('/dashboard');
     }

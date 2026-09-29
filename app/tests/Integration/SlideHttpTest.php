@@ -121,5 +121,53 @@ final class SlideHttpTest extends TestCase
         self::assertFileDoesNotExist($path);
         self::assertFileDoesNotExist($staged);
         self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM slide_assets')->fetchColumn());
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM slide_imports')->fetchColumn());
+    }
+
+    /** Owner decision 8: images stay while a past session uses them, and go with the last one. */
+    public function testSlidesUsedByPastSessionsSurviveWorkshopDeletion(): void
+    {
+        $this->uploadAs($this->tutor, $this->wid, 'sample.pdf', 'used.pdf');
+        $this->convert();
+        $this->uploadAs($this->tutor, $this->wid, 'sample.pdf', 'unused.pdf');
+        $this->convert();
+        $used = (int) $this->pdo->query("SELECT id FROM slide_imports WHERE original_filename = 'used.pdf'")->fetchColumn();
+        [$a1] = array_map('intval', $this->pdo->query("SELECT id FROM slide_assets WHERE slide_import_id = {$used} ORDER BY page_number")->fetchAll(PDO::FETCH_COLUMN));
+        $usedPaths = $this->pdo->query("SELECT image_path FROM slide_assets WHERE slide_import_id = {$used}")->fetchAll(PDO::FETCH_COLUMN);
+        $unusedPaths = $this->pdo->query("SELECT image_path FROM slide_assets WHERE slide_import_id <> {$used}")->fetchAll(PDO::FETCH_COLUMN);
+
+        $this->tutor->post("/workshops/{$this->wid}/blocks", ['block_type' => 'slide', 'config' => '{}', 'slide_asset_id' => (string) $a1]);
+        $s1 = (int) basename($this->tutor->post("/workshops/{$this->wid}/sessions")->headers['Location']);
+        $this->tutor->post("/sessions/{$s1}/end");
+        $s2 = (int) basename($this->tutor->post("/workshops/{$this->wid}/sessions")->headers['Location']);
+        $this->tutor->post("/sessions/{$s2}/end");
+
+        // another tenant with a detached, unused import must not be touched by our clean-up
+        $other = new HttpHarness($this->pdo, $this->clock, '198.51.100.99');
+        $other->signUpTutor('other@example.org');
+        $this->pdo->exec("INSERT INTO slide_imports (tenant_id, workshop_id, original_filename, page_count, created_at)
+                          SELECT id, NULL, 'foreign.pdf', 0, NOW(3) FROM tenants WHERE email = 'other@example.org'");
+
+        self::assertSame(303, $this->tutor->post("/workshops/{$this->wid}/delete")->status);
+        foreach ($usedPaths as $f) {
+            self::assertFileExists($f, 'image used by past sessions is kept');
+        }
+        foreach ($unusedPaths as $f) {
+            self::assertFileDoesNotExist($f, 'unused import removed with the workshop');
+        }
+        self::assertSame(null, $this->pdo->query("SELECT workshop_id FROM slide_imports WHERE id = {$used}")->fetchColumn(), 'import detached');
+        self::assertSame(200, $this->tutor->get("/slides/{$a1}")->status, 'tutor can still view it (session history)');
+        self::assertSame(404, $other->get("/slides/{$a1}")->status, 'still tenant-scoped');
+        self::assertSame($a1, (int) $this->pdo->query("SELECT slide_asset_id FROM session_blocks WHERE session_id = {$s1}")->fetchColumn());
+
+        self::assertSame(303, $this->tutor->post("/sessions/{$s1}/delete")->status);
+        foreach ($usedPaths as $f) {
+            self::assertFileExists($f, 'second session still uses it');
+        }
+        self::assertSame(303, $this->tutor->post("/sessions/{$s2}/delete")->status);
+        foreach ($usedPaths as $f) {
+            self::assertFileDoesNotExist($f, 'removed with the last session that used it');
+        }
+        self::assertSame(['foreign.pdf'], $this->pdo->query('SELECT original_filename FROM slide_imports')->fetchAll(PDO::FETCH_COLUMN));
     }
 }

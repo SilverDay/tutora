@@ -144,6 +144,7 @@ final class App
             $this->sessionService($t), $this->relayTokens(), $this->view, $this->tenantDb($t),
             $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(),
             $this->whiteboardService(), $this->whiteboardModeration(), $this->snapshots($t),
+            $this->slideImports($t),
         );
         $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->dashboard($q, $t)));
         $r->add('POST', '/workshops', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->create($q, $t)));

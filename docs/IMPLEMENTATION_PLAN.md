@@ -145,7 +145,7 @@ Each phase ends with passing tests and is committed separately.
 | --- | --- | --- |
 | `workshops` → `tenants` | RESTRICT | Tenant deletion must be an explicit, audited process. |
 | `workshop_blocks` → `workshops` | CASCADE | Template internals. |
-| `slide_imports` → `workshops` | CASCADE | Template internals (asset files removed by app). |
+| `slide_imports` → `workshops` | SET NULL (migration 0006) | Owner decision 8: images stay while past sessions use them; detached imports no session references are removed by `SlideImportService::collectOrphans()` (rows, then files) after a workshop or session deletion. |
 | `workshop_blocks.slide_asset` / `slide_assets` → `slide_imports` | CASCADE / RESTRICT from blocks | A block can't point at a deleted asset; the app removes blocks first. |
 | `sessions` → `tenants` | RESTRICT | See above. |
 | `sessions.workshop_id` → `workshops` | SET NULL | History survives template deletion (snapshot model). |
@@ -177,7 +177,7 @@ Each phase ends with passing tests and is committed separately.
 | – | `whiteboard_entities` | **Removed** (see §2). |
 | – | Whiteboard sidecar approach | **Approved** (see §2). |
 
-Implementation status: 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
+Implementation status: 8 ✅ (migration 0006 + `SlideImportService::collectOrphans()`, called after workshop and session deletion; the Phase 9 retention purge must call it too), 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
 requires operator + reason and a typed confirmation, clears TOTP and codes, audits `auth.mfa.reset`, emails the tutor).
 
 Still open (housekeeping): make `main` the default branch on GitHub; decide whether to add PHPStan as a CI-only step.
