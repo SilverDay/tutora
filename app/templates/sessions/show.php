@@ -137,4 +137,8 @@
             <button type="submit" class="danger">Delete session data now</button>
         </form>
     <?php endif; ?>
+    <form method="post" action="/sessions/<?= $e($session['id']) ?>/export" class="inline">
+        <input type="hidden" name="_csrf" value="<?= $e($csrf) ?>">
+        <button type="submit" class="secondary">Export results (CSV)</button>
+    </form>
 </section>

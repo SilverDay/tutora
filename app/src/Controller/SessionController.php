@@ -26,6 +26,8 @@ use Tutora\Ai\AiLimitReached;
 use Tutora\Ai\AiUnavailable;
 use Tutora\Ai\SummaryNotShareable;
 use Tutora\Ai\SummaryService;
+use Tutora\Audit\AuditLog;
+use Tutora\Export\SessionExporter;
 use Tutora\Slides\SlideImportService;
 use Tutora\View\View;
 
@@ -46,6 +48,7 @@ final class SessionController
         private readonly SnapshotService $snapshots,
         private readonly SlideImportService $slides,
         private readonly SummaryService $summaries,
+        private readonly AuditLog $audit,
     ) {
     }
 
@@ -163,6 +166,18 @@ final class SessionController
             throw new HttpException(404, 'Not found');
         }
         return Response::redirect('/sessions/' . $id);
+    }
+
+    /** CSV export of all answers (participants as per-session pseudonyms); audited. */
+    public function export(Request $r, TenantContext $t): Response
+    {
+        $id = $r->intParam('id');
+        $result = (new SessionExporter($this->tenantDb))->export($id) ?? throw new HttpException(404, 'Not found');
+        $this->audit->record($t->tenantId, AuditLog::EXPORT, $r->clientIp, ['session_id' => $id, 'rows' => $result['rows']]);
+        return (new Response(200, $result['csv']))
+            ->withHeader('Content-Type', 'text/csv; charset=utf-8')
+            ->withHeader('Content-Disposition', 'attachment; filename="tutora-session-' . $id . '.csv"')
+            ->withHeader('Cache-Control', 'no-store');
     }
 
     public function delete(Request $r, TenantContext $t): Response

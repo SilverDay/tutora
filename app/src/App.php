@@ -147,7 +147,7 @@ final class App
             $this->sessionService($t), $this->relayTokens(), $this->view, $this->tenantDb($t),
             $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(),
             $this->whiteboardService(), $this->whiteboardModeration(), $this->snapshots($t),
-            $this->slideImports($t), $this->summaries(),
+            $this->slideImports($t), $this->summaries(), new AuditLog($this->pdo(), $this->clock),
         );
         $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->dashboard($q, $t)));
         $r->add('POST', '/workshops', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->create($q, $t)));
@@ -169,6 +169,7 @@ final class App
         $r->add('GET', '/sessions/{id:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->show($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/navigate', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->navigate($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/end', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->end($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/export', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->export($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->delete($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/quiz/start', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->quizStart($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/quiz/reveal', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->quizReveal($q, $t)));
