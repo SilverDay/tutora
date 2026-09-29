@@ -218,6 +218,12 @@ requires operator + reason and a typed confirmation, clears TOTP and codes, audi
 
 Housekeeping ✅ (2026-09-29): `main` is the default branch on GitHub; the v1 implementation was merged via SilverDay/tutora#1.
 
+Off-host machine optional (owner, 2026-09-29, documentation only): `install.sh` accepts any encryption-capable
+OpenPGP public key as `BACKUP_PUBLIC_KEY`, so `install-offhost.sh` is optional. Decisions 19 and 22 are unchanged
+(encryption mandatory, private key never on production). Without the off-host machine there is no off-host copy
+and no automated restore test; `deploy/README.md` ("Without an off-host machine") states this and how to create
+the key pair elsewhere. Installer behaviour is unchanged; only its messages and `install.conf.example` were updated.
+
 Session invalidation ✅ (owner go-ahead 2026-09-29): a per-tenant `auth_epoch` (migration 0005) is bumped
 atomically with a password change, an admin MFA reset or a recovery code regeneration. Every tutor session
 (including the partial sign-in stages) stores the epoch it was established with and is ended on its next

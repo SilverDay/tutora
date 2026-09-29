@@ -126,7 +126,7 @@ CI (`.github/workflows/ci.yml`) runs these jobs:
 
 The target is Ubuntu 24.04 LTS (x86_64). There are two installers, both idempotent and both driven by a `KEY=VALUE` file that is parsed, never executed:
 
-1. `deploy/install-offhost.sh` sets up the off-host restore machine. It generates the backup key pair (the private key stays there) and the pull account's SSH key.
+1. `deploy/install-offhost.sh` (optional, recommended) sets up the off-host restore machine. It generates the backup key pair (the private key stays there) and the pull account's SSH key. Without it, production needs only a backup public key made elsewhere, but there is then no off-host copy and no automated restore test.
 2. `deploy/install.sh` sets up the production host:
    - Apache with Let's Encrypt
    - PHP 8.3 and MariaDB

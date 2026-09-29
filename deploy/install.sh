@@ -9,8 +9,9 @@
 # generated on the first run and never regenerated.
 #
 # What stays manual (the script prints these at the end): DNS, firewall, alerting (OnFailure=),
-# the off-host restore machine (deploy/install-offhost.sh), and the backup/pull keys if not
-# configured yet.
+# and the backup/pull keys if not configured yet. The off-host restore machine
+# (deploy/install-offhost.sh) is optional but recommended: without it there is no off-host copy
+# and no automated restore test (deploy/README.md, "Without an off-host machine").
 set -euo pipefail
 umask 022
 SRC=$(cd "$(dirname "$0")/.." && pwd)
@@ -290,7 +291,7 @@ if [[ -n "$key_file" && -r "$key_file" ]]; then
   info "backup timer enabled, encrypting to $fpr"
 else
   systemctl disable -q --now tutora-backup.timer 2> /dev/null || true
-  warn "no BACKUP_PUBLIC_KEY: backups are NOT running. Run deploy/install-offhost.sh on the restore machine, then set BACKUP_PUBLIC_KEY and re-run."
+  warn "no BACKUP_PUBLIC_KEY: backups are NOT running. Set BACKUP_PUBLIC_KEY to an OpenPGP public key (from deploy/install-offhost.sh, or a key pair created elsewhere, see deploy/README.md) and re-run."
 fi
 
 pull_key=$(conf PULL_SSH_PUBLIC_KEY)
@@ -304,7 +305,7 @@ if [[ -n "$pull_key" ]]; then
   echo "command=\"/usr/bin/rrsync -ro /var/backups/tutora\",restrict $pull_key" > /var/lib/tutora-backup-pull/.ssh/authorized_keys
   info "pull account tutora-backup-pull: read-only rsync of /var/backups/tutora"
 else
-  warn "no PULL_SSH_PUBLIC_KEY: the off-host restore machine cannot pull backups yet"
+  warn "no PULL_SSH_PUBLIC_KEY: no off-host copy of the backups and no automated restore test (the off-host machine is optional, see deploy/README.md)"
 fi
 
 # --------------------------------------------------------------------------------------------

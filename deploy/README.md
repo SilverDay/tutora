@@ -5,8 +5,9 @@
 Two scripts automate everything below; both are idempotent (re-run them to update) and take a
 root-only `KEY=VALUE` configuration file that is parsed, never executed.
 
-1. **Off-host restore machine first** — generates the backup key pair (private key stays there)
-   and the SSH key of its pull account:
+1. **Off-host restore machine first** (optional, recommended; to skip it see
+   [Without an off-host machine](#without-an-off-host-machine)) — generates the backup key pair
+   (private key stays there) and the SSH key of its pull account:
    ```sh
    install -m 0600 deploy/install-offhost.conf.example /root/tutora-offhost.conf   # edit
    sudo deploy/install-offhost.sh /root/tutora-offhost.conf
@@ -27,13 +28,43 @@ root-only `KEY=VALUE` configuration file that is parsed, never executed.
    services active, internal health endpoints, `https://DOMAIN/login`, `/internal` blocked,
    cgroup controllers delegated for the sandbox limits, and a real sandboxed conversion as the
    converter user. A non-zero exit means a check failed (the release is deployed; see the output).
-3. **Off-host again** — set `PRODUCTION_HOST` and `PRODUCTION_SSH_HOST_KEY` (content of
+3. **Off-host again** (only with an off-host machine) — set `PRODUCTION_HOST` and `PRODUCTION_SSH_HOST_KEY` (content of
    production's `/etc/ssh/ssh_host_ed25519_key.pub`, pinned, no trust-on-first-use) and re-run
    `install-offhost.sh`; this enables the daily pull + restore test.
 
 Still manual (printed at the end): DNS, firewall (22/80/443), alerting via `OnFailure=` drop-ins,
 a test signup to confirm mail delivery, and keeping `install-offhost.sh` in step with production
 updates (its `/opt/tutora` migrations are the restore test's schema reference).
+
+### Without an off-host machine
+
+`install-offhost.sh` is optional. `install.sh` only needs an OpenPGP public key that can encrypt
+(`BACKUP_PUBLIC_KEY`); where the key pair comes from does not matter, and a file containing a
+private key is refused. Create the key pair on a machine other than production (for example an
+admin workstation) and copy only the public key to production:
+
+```sh
+gpg --quick-gen-key 'Tutora backups <backup@example.org>' rsa4096 encrypt never
+gpg --armor --export backup@example.org > backup-public.asc                  # → BACKUP_PUBLIC_KEY
+gpg --armor --export-secret-keys backup@example.org > backup-private.asc      # store offline
+```
+
+Leave `PULL_SSH_PUBLIC_KEY` empty. Encryption stays mandatory (decision 19) and the private key
+still never touches production (decision 22), but compared with the off-host setup you lose:
+
+- **the off-host copy** — the backups exist only in `/var/backups/tutora` on the production host,
+  so they are lost together with its disk, and a compromised production host can delete them.
+  Copy them somewhere else yourself if you need that;
+- **the automated full restore test** (decryption, import, schema comparison, `CHECK TABLE`,
+  26 h freshness check) — it needs the private key. Production still runs
+  `tutora-backup-verify.sh` after every backup (manifest checksums, encrypted exactly to the
+  backup key), which does not prove that a backup can be restored. Test a restore regularly
+  wherever the private key is (see `deploy/backup/tutora-restore-test.sh` and
+  [Disaster recovery](#disaster-recovery-manual-restore)).
+
+An off-host machine can be added at any time: run `install-offhost.sh` and use its key, or import
+your existing key pair into its keyring (`/var/lib/tutora-restore/gnupg`) — then set
+`PULL_SSH_PUBLIC_KEY` on production and re-run both installers as in steps 1–3.
 
 > Verification status: both scripts were run end to end in an Ubuntu 24.04 systemd container
 > (`TLS_MODE=self-signed`): install, re-runs, a real PPTX conversion by the daemon through rootless
@@ -97,7 +128,8 @@ systemctl list-timers 'tutora-*'        # enabled by install.sh (backup only wit
 
 ## Backups (owner decisions 5, 19, 22)
 
-Two machines, one key pair:
+Two machines, one key pair (the off-host machine is optional, see
+[Without an off-host machine](#without-an-off-host-machine)):
 
 - **Production host** (`tutora-backup.timer`, daily ~02:30): `tutora-backup.sh` writes
   `tutora-db-<UTC>.sql.gz.gpg` (mysqldump `--single-transaction`, no `USE`/`CREATE DATABASE`),

@@ -17,11 +17,13 @@ SMTP_PASSWORD=change-me
 SMTP_FROM=noreply@example.org
 SMTP_FROM_NAME=Tutora
 
-# Public backup key exported on the off-host restore machine (deploy/install-offhost.sh prints
-# its path). Without it the backup timer is NOT enabled (encryption is mandatory).
+# OpenPGP public key the backups are encrypted to: the one exported by deploy/install-offhost.sh
+# (it prints the path), or one from a key pair created elsewhere (deploy/README.md, "Without an
+# off-host machine"). Never the private key (refused). Without it the backup timer is NOT enabled
+# (encryption is mandatory).
 BACKUP_PUBLIC_KEY=/root/tutora-backup-public.asc
 # SSH public key of the off-host restore machine's pull account (one line, ssh-ed25519 ...).
-# Without it no pull account is created.
+# Optional: without it no pull account is created (no off-host copy, no automated restore test).
 PULL_SSH_PUBLIC_KEY=
 
 # Optional
