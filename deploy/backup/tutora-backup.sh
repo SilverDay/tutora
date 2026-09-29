@@ -10,8 +10,9 @@
 #   DB_NAME               database name (default tutora)
 #   STORAGE_PATH          app storage (default /var/lib/tutora)
 #   BACKUP_RETENTION_DAYS default 14 — purged session data can exist in backups at most this long
-#   BACKUP_GPG_RECIPIENT  optional: encrypt both files to this public key (recommended for any
-#                         copy that leaves the host)
+#   BACKUP_GPG_RECIPIENT  REQUIRED (owner decision): both files are encrypted to this public key
+#                         while being written; only the public key needs to be on this host
+#   GNUPGHOME             keyring containing that public key
 set -euo pipefail
 umask 077
 
@@ -26,25 +27,23 @@ log() { echo "tutora-backup: $*" >&2; }
 [[ -r "$BACKUP_DB_CNF" ]] || { log "option file $BACKUP_DB_CNF not readable"; exit 2; }
 [[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || { log "invalid DB_NAME"; exit 2; }
 [[ "$BACKUP_RETENTION_DAYS" =~ ^[0-9]+$ ]] || { log "invalid BACKUP_RETENTION_DAYS"; exit 2; }
+# encryption is mandatory: refuse to write any backup without a usable recipient key
+[[ -n "$BACKUP_GPG_RECIPIENT" ]] || { log "BACKUP_GPG_RECIPIENT is required (backups must be encrypted)"; exit 2; }
+gpg --batch --list-keys "$BACKUP_GPG_RECIPIENT" > /dev/null 2>&1 \
+  || { log "no public key for BACKUP_GPG_RECIPIENT in the keyring"; exit 2; }
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
-suffix=""
-[[ -n "$BACKUP_GPG_RECIPIENT" ]] && suffix=".gpg"
-db_file="$BACKUP_DIR/tutora-db-$stamp.sql.gz$suffix"
-files_file="$BACKUP_DIR/tutora-files-$stamp.tar.gz$suffix"
+db_file="$BACKUP_DIR/tutora-db-$stamp.sql.gz.gpg"
+files_file="$BACKUP_DIR/tutora-files-$stamp.tar.gz.gpg"
 tmp_db="$db_file.partial"
 tmp_files="$files_file.partial"
 trap 'rm -f "$tmp_db" "$tmp_files"' EXIT
 
-# encryption is streamed: with a recipient set, no plaintext copy ever reaches the disk
+# encryption is streamed: no plaintext copy ever reaches the disk
 seal() {
-  if [[ -n "$BACKUP_GPG_RECIPIENT" ]]; then
-    gpg --batch --yes --trust-model always --recipient "$BACKUP_GPG_RECIPIENT" --encrypt
-  else
-    cat
-  fi
+  gpg --batch --yes --trust-model always --recipient "$BACKUP_GPG_RECIPIENT" --encrypt
 }
 
 # consistent InnoDB snapshot without locking the app. Deliberately without --databases: the

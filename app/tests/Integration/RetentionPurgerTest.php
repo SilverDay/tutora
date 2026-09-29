@@ -80,9 +80,9 @@ final class RetentionPurgerTest extends TestCase
             new SessionService(new TenantDb($pdo, $t), $clock, $bc, new AuditLog($pdo, $clock), 30, $wb),
             new SnapshotService(new TenantDb($pdo, $t), $this->root, new RateLimiter($pdo, $clock), $clock),
             new SlideImportService(new TenantDb($pdo, $t), $storage, new RateLimiter($pdo, $clock), $clock, 1),
-        ], new Logger(static fn () => null));
+        ], new Logger(static fn () => null), new AuditLog($pdo, $clock));
 
-        self::assertSame(['sessions' => 1, 'failed' => 0, 'pending_signups' => 1, 'rate_limit_rows' => 1], $purger->run());
+        self::assertSame(['auto_ended' => 0, 'sessions' => 1, 'failed' => 0, 'pending_signups' => 1, 'rate_limit_rows' => 1], $purger->run());
 
         self::assertSame([$kept->sessionId], array_map('intval', $pdo->query('SELECT id FROM sessions')->fetchAll(PDO::FETCH_COLUMN)));
         self::assertSame(0, (int) $pdo->query("SELECT COUNT(*) FROM session_participants WHERE session_id = {$expired->sessionId}")->fetchColumn(), 'cascade');
@@ -98,6 +98,41 @@ final class RetentionPurgerTest extends TestCase
         self::assertTrue($has('recent'), 'row within its window kept');
         self::assertTrue($has('blocked'), 'currently blocked row kept');
 
-        self::assertSame(['sessions' => 0, 'failed' => 0, 'pending_signups' => 0, 'rate_limit_rows' => 0], $purger->run(), 'idempotent');
+        self::assertSame(['auto_ended' => 0, 'sessions' => 0, 'failed' => 0, 'pending_signups' => 0, 'rate_limit_rows' => 0], $purger->run(), 'idempotent');
+    }
+
+    /** Owner decision: sessions still live 24 h after they started are ended automatically. */
+    public function testEndsSessionsLiveForMoreThan24Hours(): void
+    {
+        $pdo = TestDatabase::reset();
+        $clock = new FrozenClock('2026-03-01 10:00:00');
+        $bc = new NullBroadcaster();
+        $wb = new NullWhiteboardModeration();
+        $blocks = [[BlockType::Poll, ['question' => 'q', 'options' => ['a', 'b']]]];
+        $overdue = new LiveSession($pdo, $clock, $bc, $blocks);
+        $recent = new LiveSession($pdo, $clock, $bc, $blocks, 'second@example.org');
+        $alreadyEnded = new LiveSession($pdo, $clock, $bc, $blocks, 'third@example.org');
+        $alreadyEnded->sessions->end($alreadyEnded->sessionId);
+        $pdo->exec("UPDATE sessions SET started_at = '" . Time::toDb($clock->now()->modify('-25 hours')) . "' WHERE id IN ({$overdue->sessionId}, {$alreadyEnded->sessionId})");
+        $pdo->exec("UPDATE sessions SET started_at = '" . Time::toDb($clock->now()->modify('-23 hours')) . "' WHERE id = {$recent->sessionId}");
+        $endedAtBefore = $pdo->query("SELECT ended_at FROM sessions WHERE id = {$alreadyEnded->sessionId}")->fetchColumn();
+        $bc->sent = [];
+
+        $purger = new RetentionPurger($pdo, $clock, fn (TenantContext $t): array => [
+            new SessionService(new TenantDb($pdo, $t), $clock, $bc, new AuditLog($pdo, $clock), 30, $wb),
+            new SnapshotService(new TenantDb($pdo, $t), $this->root, new RateLimiter($pdo, $clock), $clock),
+            new SlideImportService(new TenantDb($pdo, $t), new SlideStorage($this->root), new RateLimiter($pdo, $clock), $clock, 1),
+        ], new Logger(static fn () => null), new AuditLog($pdo, $clock), 24);
+
+        self::assertSame(1, $purger->run()['auto_ended']);
+        $row = $pdo->query("SELECT status, ended_at, expires_at, active_join_code FROM sessions WHERE id = {$overdue->sessionId}")->fetch();
+        self::assertSame(['ended', '2026-03-01 10:00:00.000', '2026-03-31 10:00:00.000', null], [$row['status'], $row['ended_at'], $row['expires_at'], $row['active_join_code']], 'retention starts now');
+        self::assertSame('live', $pdo->query("SELECT status FROM sessions WHERE id = {$recent->sessionId}")->fetchColumn(), '23 h: still live');
+        self::assertSame($endedAtBefore, $pdo->query("SELECT ended_at FROM sessions WHERE id = {$alreadyEnded->sessionId}")->fetchColumn(), 'ended sessions untouched');
+        self::assertSame([[$overdue->sessionId, 'session_ended']], array_map(static fn ($m) => [$m[0], $m[1]['type']], $bc->sent), 'participants told');
+        self::assertContains(['end_session', $overdue->sessionId], $wb->calls);
+        $audit = json_decode((string) $pdo->query("SELECT details FROM audit_events WHERE event_type = 'session.auto_ended'")->fetchColumn(), true);
+        self::assertSame(['session_id' => $overdue->sessionId, 'max_live_hours' => 24], $audit);
+        self::assertSame(0, $purger->run()['auto_ended'], 'idempotent');
     }
 }

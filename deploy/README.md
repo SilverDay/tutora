@@ -10,7 +10,7 @@ Production layout: the app in `/var/www/tutora` (document root `app/public`), da
 | `systemd/tutora-relay.service` | Go realtime relay (loopback; binary at `/usr/local/bin/tutora-relay`) |
 | `systemd/tutora-whiteboard.service` | Node whiteboard sidecar (loopback) |
 | `systemd/tutora-converter.service` | slide conversion daemon (rootless container runtime) |
-| `systemd/tutora-purge.{service,timer}` | daily retention purge (`app/bin/purge.php`) |
+| `systemd/tutora-purge.{service,timer}` | hourly maintenance (`app/bin/purge.php`): auto-end sessions live > 24 h, retention purge |
 | `systemd/tutora-backup.{service,timer}` | daily backup **and** restore test |
 | `backup/tutora-backup.sh`, `backup/tutora-restore-test.sh` | backup and restore-test scripts |
 
@@ -97,23 +97,29 @@ BACKUP_DB_CNF=/etc/tutora/backup.cnf
 DB_NAME=tutora
 STORAGE_PATH=/var/lib/tutora
 BACKUP_RETENTION_DAYS=14
-# optional, recommended for any copy leaving the host (public key only on this host):
-#BACKUP_GPG_RECIPIENT=backup@example.org
-#GNUPGHOME=/var/lib/tutora-backup/gnupg
+# required: backups are always encrypted to this key
+BACKUP_GPG_RECIPIENT=backup@example.org
+GNUPGHOME=/var/lib/tutora-backup/gnupg
 ENV
+# key pair generated OFF this host; only the public key is imported here
+install -d -m 0700 -o tutora-backup /var/lib/tutora-backup/gnupg
+sudo -u tutora-backup GNUPGHOME=/var/lib/tutora-backup/gnupg gpg --import backup-public.asc
 ```
 
 The backup account has read-only access to the live database; the restore test can only write
 to the scratch database (and refuses dumps containing `USE`/`CREATE DATABASE`).
 
-**Encryption.** With `BACKUP_GPG_RECIPIENT` set, both files are encrypted while being written
-(no plaintext copy on disk). The restore test then needs the private key in `GNUPGHOME`;
-keeping that key on the same host protects off-host copies only.
+**Encryption is mandatory** (owner decision): `tutora-backup.sh` refuses to run without
+`BACKUP_GPG_RECIPIENT` or when that public key is not in `GNUPGHOME`. Both files are encrypted
+while being written (no plaintext copy on disk). The restore test decrypts with the private key
+from `GNUPGHOME`; where that key lives is an open owner decision (see
+`docs/IMPLEMENTATION_PLAN.md` §6) — on this host, the encryption protects copies that leave it.
 
-**Retention statement (for the privacy policy).** Ended sessions are purged 30 days after the
+**Retention statement (for the privacy policy).** Sessions end when the tutor ends them, or
+automatically 24 hours after they started. Ended sessions are purged 30 days after the
 session ended (per-tenant configurable). Backups are kept 14 days, so purged session data can
 still exist in a backup for at most 14 days after the purge — i.e. at most 44 days after the
-session ended with the default retention. Backups are not edited retroactively.
+session ended with the default retention (at most 24 h + 30 d + 14 d after a session started). Backups are not edited retroactively.
 
 The DB dump and the storage archive are taken seconds apart, not atomically; a file written in
 between (e.g. a new snapshot) may be missing from, or extra in, the archive.

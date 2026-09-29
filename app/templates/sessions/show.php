@@ -126,6 +126,7 @@
                     <button type="submit"><?= $e($label) ?></button>
                 </form>
             <?php endforeach; ?>
+            <p class="muted" data-testid="auto-end-note">Live sessions end automatically <?= (int) ($maxLiveHours ?? 24) ?> hours after they started.</p>
             <form method="post" action="/sessions/<?= $e($session['id']) ?>/end" class="inline">
                 <input type="hidden" name="_csrf" value="<?= $e($csrf) ?>">
                 <button type="submit" class="danger">End session</button>

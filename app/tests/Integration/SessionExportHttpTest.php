@@ -22,6 +22,7 @@ final class SessionExportHttpTest extends TestCase
         $tutor->post("/workshops/{$wid}/blocks", ['block_type' => 'poll', 'config' => '{"question":"Q","options":["A","B"]}']);
         $sid = (int) basename($tutor->post("/workshops/{$wid}/sessions")->headers['Location']);
 
+        self::assertStringContainsString('Live sessions end automatically 24 hours after they started.', $tutor->get("/sessions/{$sid}")->body);
         $r = $tutor->post("/sessions/{$sid}/export");
         self::assertSame(200, $r->status);
         self::assertSame('text/csv; charset=utf-8', $r->headers['Content-Type']);

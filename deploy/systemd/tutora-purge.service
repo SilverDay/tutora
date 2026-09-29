@@ -1,4 +1,5 @@
-# Retention purge: expired session data (DB rows, snapshot files, whiteboard documents, slide
+# Maintenance: ends sessions live > SESSION_MAX_LIVE_HOURS (default 24), then retention purge:
+# expired session data (DB rows, snapshot files, whiteboard documents, slide
 # images no session uses any more), expired pending signups, stale rate-limit rows.
 [Unit]
 Description=Tutora retention purge

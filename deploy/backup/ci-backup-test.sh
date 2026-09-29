@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # CI check of the backup routine (run inside the mariadb:10.11 image so client tools match the
 # server). Uses the exact grants documented in deploy/README.md, then: backup + restore test
-# (plain and GPG-encrypted), refusal of a dump containing USE, live database unchanged.
+# (encryption mandatory: unencrypted runs refused), refusal of a dump containing USE, live DB unchanged.
 # Env: DB_HOST, DB_ADMIN_USER, DB_ADMIN_PASSWORD (to create the backup account), DB_NAME,
 #      STORAGE_PATH (any directory to archive).
 set -euo pipefail
@@ -21,16 +21,11 @@ export BACKUP_DB_CNF="$work/backup.cnf" DB_NAME STORAGE_PATH
 checksum() { admin -e "CHECKSUM TABLE \`$DB_NAME\`.tenants, \`$DB_NAME\`.sessions, \`$DB_NAME\`.schema_migrations"; }
 before=$(checksum)
 
-echo "== plain backup + restore test"
-export BACKUP_DIR="$work/plain"
-"$here/tutora-backup.sh"
-"$here/tutora-restore-test.sh"
-
-echo "== dump containing USE is refused"
-db=$(ls -1 "$BACKUP_DIR"/tutora-db-*.sql.gz)
-(echo "USE \`$DB_NAME\`;"; gunzip -c "$db") | gzip > "$db.tmp" && mv "$db.tmp" "$db"
-if "$here/tutora-restore-test.sh" 2> "$work/err"; then echo "expected refusal"; exit 1; fi
-grep 'refusing to import' "$work/err"
+echo "== backups without encryption are refused"
+export BACKUP_DIR="$work/refused"
+if BACKUP_GPG_RECIPIENT= "$here/tutora-backup.sh" 2> "$work/err"; then echo "unencrypted backup was written"; exit 1; fi
+grep 'BACKUP_GPG_RECIPIENT is required' "$work/err"
+[[ -z "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]] || { echo "files written despite refusal"; exit 1; }
 
 echo "== encrypted backup + restore test"
 export GNUPGHOME="$work/gnupg" BACKUP_DIR="$work/enc" BACKUP_GPG_RECIPIENT=ci-backup@tutora.test
@@ -39,6 +34,13 @@ gpg --batch --quiet --passphrase '' --quick-gen-key 'ci <ci-backup@tutora.test>'
 "$here/tutora-backup.sh"
 if gunzip -t "$BACKUP_DIR"/tutora-db-*.gpg 2>/dev/null; then echo "backup not encrypted"; exit 1; fi
 "$here/tutora-restore-test.sh"
+
+echo "== dump containing USE is refused"
+db=$(ls -1 "$BACKUP_DIR"/tutora-db-*.sql.gz.gpg)
+(echo "USE \`$DB_NAME\`;"; gpg --batch --quiet --decrypt "$db" | gunzip) | gzip \
+  | gpg --batch --yes --trust-model always --recipient "$BACKUP_GPG_RECIPIENT" --encrypt > "$db.tmp" && mv "$db.tmp" "$db"
+if "$here/tutora-restore-test.sh" 2> "$work/err"; then echo "expected refusal"; exit 1; fi
+grep 'refusing to import' "$work/err"
 
 [[ "$(checksum)" == "$before" ]] || { echo "live database changed"; exit 1; }
 [[ -z "$(admin -e "SHOW DATABASES LIKE 'tutora_restore_test'")" ]] || { echo "scratch database left behind"; exit 1; }

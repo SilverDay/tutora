@@ -199,6 +199,9 @@ Each phase ends with passing tests and is committed separately.
 | 16 | AI summary sharing | **Only if based on ≥ 3 responses** (`SummaryService::MIN_RESPONSES_TO_SHARE`; counted on the responses actually sent to the model), so a shared summary cannot reveal an individual answer. |
 | 17 | AI limits | **Defaults kept:** 200 calls and 500 000 tokens per tenant per UTC month; 10 calls per session per UTC day (all configurable in `.env`). |
 | 18 | "Hide results" scope | **Confirmed:** aggregate block types only; not Wall (shared content) and not Quiz (own reveal). |
+| 19 | Backup encryption | **Mandatory:** `tutora-backup.sh` refuses to run without a GPG recipient whose public key is in the keyring; encryption is streamed (no plaintext on disk). Open: where the private key for the restore test lives. |
+| 20 | Sessions never ended by the tutor | **Ended automatically 24 h after start** (`SESSION_MAX_LIVE_HOURS`), which starts their retention period; hourly maintenance timer; audited as `session.auto_ended`. |
+| 21 | Static analysis | **PHPStan level 8, no baseline, in CI** (`app/phpstan.neon`). |
 | – | `whiteboard_entities` | **Removed** (see §2). |
 | – | Whiteboard sidecar approach | **Approved** (see §2). |
 
@@ -208,7 +211,7 @@ state in `session_block_result_reveals` (migration 0007); until revealed the par
 aggregate broadcasts are tutor-only), 8 ✅ (migration 0006 + `SlideImportService::collectOrphans()`, called after workshop and session deletion; the Phase 9 retention purge must call it too), 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
 requires operator + reason and a typed confirmation, clears TOTP and codes, audits `auth.mfa.reset`, emails the tutor).
 
-Still open (housekeeping): make `main` the default branch on GitHub; decide whether to add PHPStan as a CI-only step.
+Still open (housekeeping): make `main` the default branch on GitHub.
 
 Session invalidation ✅ (owner go-ahead 2026-09-29): a per-tenant `auth_epoch` (migration 0005) is bumped
 atomically with a password change, an admin MFA reset or a recovery code regeneration. Every tutor session

@@ -27,6 +27,7 @@ final class AuditLog
     public const PASSWORD_CHANGED = 'auth.password.changed';
     public const WORKSHOP_DELETED = 'workshop.deleted';
     public const SESSION_DELETED = 'session.deleted';
+    public const SESSION_AUTO_ENDED = 'session.auto_ended';
     public const EXPORT = 'session.exported';
     public const AI_SUMMARY = 'ai.summary.generated';
 

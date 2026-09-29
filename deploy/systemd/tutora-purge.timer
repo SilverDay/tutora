@@ -1,9 +1,9 @@
 [Unit]
-Description=Daily Tutora retention purge
+Description=Hourly Tutora maintenance (auto-end after 24 h, retention purge)
 
 [Timer]
-OnCalendar=*-*-* 03:15:00
-RandomizedDelaySec=15min
+OnCalendar=hourly
+RandomizedDelaySec=5min
 Persistent=true
 
 [Install]

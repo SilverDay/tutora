@@ -227,6 +227,7 @@ final class App
                 return Response::redirect('/login');
             }
             $this->view->share('signedIn', true);
+            $this->view->share('maxLiveHours', $this->config->int('SESSION_MAX_LIVE_HOURS', 24));
             return $handler($request, $tenant)->withHeader('Cache-Control', 'no-store');
         };
     }
@@ -447,6 +448,8 @@ final class App
             $app->clock,
             fn (TenantContext $t): array => [$app->sessionService($t), $app->snapshots($t), $app->slideImports($t)],
             $app->logger,
+            new AuditLog($app->pdo(), $app->clock),
+            $config->int('SESSION_MAX_LIVE_HOURS', 24),
         );
     }
 

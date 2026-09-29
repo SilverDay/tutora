@@ -3,8 +3,9 @@
 declare(strict_types=1);
 
 /**
- * Retention purge (run daily by deploy/systemd/tutora-purge.timer):
- * expired session data, expired pending signups, stale rate-limit rows.
+ * Maintenance (run hourly by deploy/systemd/tutora-purge.timer): ends sessions live for longer
+ * than SESSION_MAX_LIVE_HOURS (default 24), then purges expired session data, expired pending
+ * signups and stale rate-limit rows.
  * Usage: php bin/purge.php
  */
 
