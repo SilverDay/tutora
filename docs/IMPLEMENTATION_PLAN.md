@@ -216,7 +216,7 @@ state in `session_block_result_reveals` (migration 0007); until revealed the par
 aggregate broadcasts are tutor-only), 8 ✅ (migration 0006 + `SlideImportService::collectOrphans()`, called after workshop and session deletion; the Phase 9 retention purge must call it too), 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
 requires operator + reason and a typed confirmation, clears TOTP and codes, audits `auth.mfa.reset`, emails the tutor).
 
-Still open (housekeeping): make `main` the default branch on GitHub.
+Housekeeping ✅ (2026-09-29): `main` is the default branch on GitHub; the v1 implementation was merged via SilverDay/tutora#1.
 
 Session invalidation ✅ (owner go-ahead 2026-09-29): a per-tenant `auth_epoch` (migration 0005) is bumped
 atomically with a password change, an admin MFA reset or a recovery code regeneration. Every tutor session
