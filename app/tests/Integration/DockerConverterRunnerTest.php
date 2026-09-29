@@ -61,12 +61,16 @@ final class DockerConverterRunnerTest extends TestCase
         self::assertSame(['page-1.png', 'page-2.png', 'page-3.png'], array_values(array_diff(scandir($this->dir . '/out'), ['.', '..'])));
     }
 
+    /**
+     * A 0 s budget always expires while the container is starting, so this deterministically
+     * exercises the external timeout and the cleanup path (independent of runner speed).
+     */
     public function testWallClockTimeoutRemovesContainer(): void
     {
         copy(__DIR__ . '/../fixtures/sample.pptx', $this->dir . '/in/source.pptx');
         chmod($this->dir . '/in/source.pptx', 0644);
         $start = microtime(true);
-        $r = (new DockerConverterRunner($this->image))->run($this->dir . '/in', $this->dir . '/out', 1, 50);
+        $r = (new DockerConverterRunner($this->image))->run($this->dir . "/in", $this->dir . "/out", 0, 50);
         self::assertTrue($r->timedOut);
         self::assertLessThan(15, microtime(true) - $start);
         $left = shell_exec("docker ps -a --filter name=tutora-conv- --format '{{.Names}}'");

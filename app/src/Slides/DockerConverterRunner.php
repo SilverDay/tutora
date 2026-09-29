@@ -88,15 +88,37 @@ final class DockerConverterRunner implements ConverterRunner
             }
             if (microtime(true) >= $deadline) {
                 // killing the CLI would not stop the container: remove it by name
-                $kill = proc_open([$this->runtime, 'rm', '-f', $name], [0 => ['file', '/dev/null', 'r'], 1 => $null, 2 => $null], $p2);
-                if (is_resource($kill)) {
-                    proc_close($kill);
-                }
+                $this->exec([$this->runtime, 'rm', '-f', $name]);
                 proc_terminate($proc);
                 proc_close($proc);
+                $this->ensureRemoved($name);
                 return new ConverterResult(124, true);
             }
             usleep(100_000);
         }
+    }
+
+    /**
+     * Defensive: if the timeout fired while the CLI was still creating the container, a
+     * first "rm -f" can precede the container's existence. Retry until the runtime no
+     * longer knows the name (bounded).
+     */
+    private function ensureRemoved(string $name): void
+    {
+        for ($i = 0; $i < 20; $i++) {
+            if ($this->exec([$this->runtime, 'container', 'inspect', $name]) !== 0) {
+                return;
+            }
+            $this->exec([$this->runtime, 'rm', '-f', $name]);
+            usleep(250_000);
+        }
+    }
+
+    /** @param list<string> $argv */
+    private function exec(array $argv): int
+    {
+        $null = ['file', '/dev/null', 'w'];
+        $p = proc_open($argv, [0 => ['file', '/dev/null', 'r'], 1 => $null, 2 => $null], $pipes);
+        return is_resource($p) ? proc_close($p) : -1;
     }
 }
