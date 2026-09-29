@@ -1,6 +1,7 @@
-<?php /** @var callable $e @var callable $partial @var array<string,mixed> $session @var array<string,mixed> $state @var list<array<string,mixed>> $blocks */ ?>
-<?php if ($session['status'] === 'live'): ?><script type="module" src="/assets/tutor-session.js"></script><?php endif; ?>
+<?php /** @var callable $e @var callable $partial @var array<string,mixed> $session @var array<string,mixed> $state @var list<array<string,mixed>> $blocks @var list<array<string,mixed>> $snapshots */ ?>
 <?php $current = $state['current_block']; ?>
+<?php if ($session['status'] === 'live'): ?><script type="module" src="/assets/tutor-session.js"></script><?php endif; ?>
+<?php if ($current !== null && in_array($current['type'], ['whiteboard', 'annotate'], true) && $session['status'] === 'live'): ?><script type="module" src="/assets/whiteboard.bundle.js"></script><?php endif; ?>
 <section class="card">
     <h1><?= $e($session['workshop_title_snapshot']) ?></h1>
     <?= $partial('_errors', ['errors' => $errors]) ?>
@@ -67,7 +68,34 @@
         </form>
     <?php endif; ?>
 
+    <?php if (in_array($current['type'], ['whiteboard', 'annotate'], true) && $session['status'] === 'live'): ?>
+        <div id="whiteboard" data-session-id="<?= $e($session['id']) ?>" data-block-id="<?= $e($current['id']) ?>"
+             data-kind="<?= $e($current['type']) ?>" data-mode="<?= $e($current['config']['mode'] ?? 'collaborative') ?>"
+             data-asset-id="<?= $e($current['slide_asset_id'] ?? '') ?>"
+             data-tags="<?= $e(json_encode($current['config']['tags'] ?? [], JSON_UNESCAPED_UNICODE)) ?>"></div>
+        <form method="post" action="/sessions/<?= $e($session['id']) ?>/whiteboard/clear" class="row">
+            <input type="hidden" name="_csrf" value="<?= $e($csrf) ?>">
+            <input type="hidden" name="block" value="<?= $e($current['id']) ?>">
+            <?php if (($current['config']['mode'] ?? 'collaborative') !== 'presenter'): ?>
+                <button type="submit" class="danger">Clear board</button>
+            <?php endif; ?>
+        </form>
+    <?php endif; ?>
     <div id="tutor-results" class="results" data-session-id="<?= $e($session['id']) ?>"></div>
+</section>
+<?php endif; ?>
+
+<?php if ($snapshots !== []): ?>
+<section class="card">
+    <h2>Whiteboard snapshots</h2>
+    <div class="thumbs">
+    <?php foreach ($snapshots as $snap): ?>
+        <figure>
+            <a href="/snapshots/<?= $e($snap['id']) ?>"><img src="/snapshots/<?= $e($snap['id']) ?>" alt="Snapshot" loading="lazy"></a>
+            <figcaption>Block <?= $e($snap['session_block_id']) ?> · <?= $e(substr((string) $snap['captured_at'], 11, 8)) ?> UTC</figcaption>
+        </figure>
+    <?php endforeach; ?>
+    </div>
 </section>
 <?php endif; ?>
 

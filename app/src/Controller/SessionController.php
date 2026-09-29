@@ -19,6 +19,9 @@ use Tutora\Session\SessionService;
 use Tutora\Support\ValidationException;
 use Tutora\Tenant\TenantContext;
 use Tutora\Tenant\TenantDb;
+use Tutora\Whiteboard\SnapshotService;
+use Tutora\Whiteboard\WhiteboardModeration;
+use Tutora\Whiteboard\WhiteboardService;
 use Tutora\View\View;
 
 /** Tutor live-session console and tutor-side JSON API. */
@@ -33,7 +36,55 @@ final class SessionController
         private readonly WallService $wall,
         private readonly QuizService $quiz,
         private readonly BlockStates $states,
+        private readonly WhiteboardService $whiteboard,
+        private readonly WhiteboardModeration $whiteboardModeration,
+        private readonly SnapshotService $snapshots,
     ) {
+    }
+
+    public function whiteboardToken(Request $r, TenantContext $t): Response
+    {
+        return Response::json($this->whiteboard->tutorToken($this->tenantDb, $r->intParam('id'), $r->intParam('block'))
+            ?? throw new HttpException(404, 'Not found'));
+    }
+
+    public function clearBoard(Request $r, TenantContext $t): Response
+    {
+        $id = $r->intParam('id');
+        return $this->act($id, function () use ($r, $id): bool {
+            $block = self::intInput($r, 'block');
+            if ($this->tenantDb->one("SELECT b.id FROM session_blocks b JOIN sessions s ON s.id = b.session_id
+                WHERE s.id = :sid AND s.tenant_id = :tenant_id AND b.id = :bid AND b.block_type IN ('whiteboard', 'annotate')", ['sid' => $id, 'bid' => $block]) === null) {
+                return false;
+            }
+            $this->whiteboardModeration->clear($id, $block);
+            return true;
+        });
+    }
+
+    /** Client-side captured PNG of the rendered board (raw image/png body). */
+    public function uploadSnapshot(Request $r, TenantContext $t): Response
+    {
+        if (strtolower((string) $r->header('content-type')) !== 'image/png') {
+            throw new HttpException(415, 'Expected image/png');
+        }
+        try {
+            $id = $this->snapshots->store($r->intParam('id'), $r->intParam('block'), $r->body);
+        } catch (ValidationException $e) {
+            return Response::json(['error' => 'validation', 'errors' => $e->errors], 422);
+        }
+        return $id === null ? throw new HttpException(404, 'Not found') : Response::json(['id' => $id], 201);
+    }
+
+    public function snapshotImage(Request $r, TenantContext $t): Response
+    {
+        $path = $this->snapshots->path($r->intParam('snapshot')) ?? throw new HttpException(404, 'Not found');
+        return new Response(200, (string) file_get_contents($path), [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => 'inline; filename="whiteboard.png"',
+            'Cache-Control' => 'private, max-age=3600',
+            'Content-Security-Policy' => "default-src 'none'; sandbox",
+        ]);
     }
 
     public function show(Request $r, TenantContext $t): Response
@@ -45,6 +96,7 @@ final class SessionController
             'session' => $this->sessions->find($id),
             'state' => $state,
             'blocks' => $this->sessions->blocks($id),
+            'snapshots' => $this->snapshots->list($id),
             'errors' => self::errorMessages($r),
         ]);
     }
@@ -73,6 +125,7 @@ final class SessionController
 
     public function delete(Request $r, TenantContext $t): Response
     {
+        $this->snapshots->deleteSessionFiles($r->intParam('id'));
         if (!$this->sessions->delete($r->intParam('id'), $r->clientIp)) {
             throw new HttpException(404, 'Not found');
         }
@@ -133,6 +186,7 @@ final class SessionController
             $actor = (string) $r->input('actor');
             $this->submissions->removeActor($this->tenantDb, $id, $actor);
             $this->wall->removeActor($this->tenantDb, $id, $actor);
+            $this->whiteboardModeration->removeActor($id, $actor);
             return true;
         });
     }

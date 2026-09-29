@@ -11,6 +11,8 @@ use Tutora\Support\Clock;
 use Tutora\Support\Time;
 use Tutora\Support\ValidationException;
 use Tutora\Tenant\TenantDb;
+use Tutora\Whiteboard\NullWhiteboardModeration;
+use Tutora\Whiteboard\WhiteboardModeration;
 
 /**
  * Tutor-side live session lifecycle (tenant-scoped).
@@ -30,6 +32,7 @@ final class SessionService
         private readonly Broadcaster $broadcaster,
         private readonly AuditLog $audit,
         private readonly int $defaultRetentionDays,
+        private readonly WhiteboardModeration $whiteboard = new NullWhiteboardModeration(),
     ) {
     }
 
@@ -123,10 +126,19 @@ final class SessionService
      */
     public function goToBlock(int $sessionId, int $sessionBlockId): ?int
     {
-        $rev = $this->db->transaction(function (TenantDb $db) use ($sessionId, $sessionBlockId): ?int {
-            $s = $db->one("SELECT id, session_revision FROM sessions WHERE id = :id AND tenant_id = :tenant_id AND status = 'live' FOR UPDATE", ['id' => $sessionId]);
+        $left = null;
+        $rev = $this->db->transaction(function (TenantDb $db) use ($sessionId, $sessionBlockId, &$left): ?int {
+            $s = $db->one("SELECT id, session_revision, current_session_block_id FROM sessions WHERE id = :id AND tenant_id = :tenant_id AND status = 'live' FOR UPDATE", ['id' => $sessionId]);
             if ($s === null) {
                 return null;
+            }
+            if ($s['current_session_block_id'] !== null && (int) $s['current_session_block_id'] !== $sessionBlockId) {
+                $prev = $db->one(
+                    "SELECT b.id FROM session_blocks b JOIN sessions s ON s.id = b.session_id
+                     WHERE b.id = :bid AND s.tenant_id = :tenant_id AND b.block_type IN ('whiteboard', 'annotate')",
+                    ['bid' => (int) $s['current_session_block_id']],
+                );
+                $left = $prev === null ? null : (int) $prev['id'];
             }
             // the block must belong to this very session
             $b = $db->one(
@@ -145,6 +157,10 @@ final class SessionService
             return (int) $s['session_revision'] + 1;
         });
         if ($rev !== null) {
+            if ($left !== null) {
+                // spec: on block exit the tutor's client captures the rendered board as a snapshot
+                $this->broadcaster->broadcast($sessionId, ['type' => 'capture', 'session_block_id' => $left], Broadcaster::TARGET_TUTOR);
+            }
             $this->broadcaster->broadcast($sessionId, ['type' => 'block_change', 'session_revision' => $rev, 'session_block_id' => $sessionBlockId]);
         }
         return $rev;
@@ -194,6 +210,7 @@ final class SessionService
         });
         if ($rev !== null) {
             $this->broadcaster->broadcast($sessionId, ['type' => 'session_ended', 'session_revision' => $rev]);
+            $this->whiteboard->endSession($sessionId);
         }
         return $rev !== null;
     }
@@ -203,6 +220,7 @@ final class SessionService
         $ok = $this->db->run('DELETE FROM sessions WHERE id = :id AND tenant_id = :tenant_id', ['id' => $sessionId])->rowCount() === 1;
         if ($ok) {
             $this->audit->record($this->db->tenantId(), AuditLog::SESSION_DELETED, $ip, ['session_id' => $sessionId]);
+            $this->whiteboard->dropSession($sessionId);
         }
         return $ok;
     }

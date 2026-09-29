@@ -38,6 +38,7 @@ final class AuthHttpFlowTest extends TestCase
             'APP_ENV' => 'production',
             'APP_BASE_URL' => 'https://tutora.test',
             'ALLOWED_ORIGINS' => 'https://tutora.test',
+            'WHITEBOARD_TOKEN_KEY' => str_repeat('33', 32),
             'STORAGE_PATH' => sys_get_temp_dir() . '/tutora-http-test-storage',
         ]);
         $this->app = (new App($config, $this->session, $this->clock, $pdo))->withAuthService(new TutorAuthService(

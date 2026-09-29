@@ -1,5 +1,4 @@
 # Development environment (spec: Deployment & Infrastructure).
-# The whiteboard service is added in Phase 7.
 services:
   app:        # PHP 8.3 + Apache
     build: ./app
@@ -39,6 +38,23 @@ services:
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
     ports:
       - "127.0.0.1:8090:8090"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+
+  whiteboard: # Node y-protocols sidecar (collaborative whiteboard / annotate)
+    build: ./whiteboard
+    environment:
+      WHITEBOARD_PUBLIC_ADDR: 0.0.0.0:8091
+      WHITEBOARD_INTERNAL_ADDR: 0.0.0.0:8082   # compose network only (not published)
+      WHITEBOARD_TOKEN_KEY: ${WHITEBOARD_TOKEN_KEY}
+      WHITEBOARD_INTERNAL_SECRET: ${WHITEBOARD_INTERNAL_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+      STORAGE_PATH: /var/lib/tutora
+    ports:
+      - "127.0.0.1:8091:8091"
+    volumes:
+      - storage:/var/lib/tutora
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

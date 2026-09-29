@@ -33,7 +33,7 @@ final class Request
     ) {
     }
 
-    public static function fromGlobals(int $maxBodyBytes = 1_048_576): self
+    public static function fromGlobals(int $maxBodyBytes = 6_291_456): self
     {
         $headers = [];
         foreach ($_SERVER as $k => $v) {
@@ -88,6 +88,9 @@ final class Request
         $ct = (string) $this->header('content-type');
         if (!str_starts_with(strtolower($ct), 'application/json')) {
             throw new HttpException(415, 'Expected application/json');
+        }
+        if (strlen($this->body) > 65536) {
+            throw new HttpException(413, 'Request body too large');
         }
         try {
             $data = json_decode($this->body, true, 32, JSON_THROW_ON_ERROR);

@@ -21,12 +21,14 @@ use Tutora\Security\RateLimiter;
 use Tutora\Security\SecretBox;
 use Tutora\Support\FrozenClock;
 use Tutora\Tests\Unit\PasswordPolicyTest;
+use Tutora\Whiteboard\NullWhiteboardModeration;
 
 /** One browser-like client (own session store) against a fresh App instance. */
 final class HttpHarness
 {
     public ArraySessionStore $session;
     public App $app;
+    public NullWhiteboardModeration $whiteboard;
 
     public function __construct(PDO $pdo, public FrozenClock $clock, public string $ip = '198.51.100.7')
     {
@@ -37,10 +39,12 @@ final class HttpHarness
             'ALLOWED_ORIGINS' => 'https://tutora.test',
             'RELAY_TOKEN_KEY' => str_repeat('11', 32),
             'PARTICIPANT_CREDENTIAL_KEY' => str_repeat('22', 32),
+            'WHITEBOARD_TOKEN_KEY' => str_repeat('33', 32),
             'RETENTION_DAYS_DEFAULT' => '30',
             'STORAGE_PATH' => sys_get_temp_dir() . '/tutora-http-test-storage',
         ]);
-        $this->app = (new App($config, $this->session, $clock, $pdo))->withAuthService(new TutorAuthService(
+        $this->whiteboard = new NullWhiteboardModeration();
+        $this->app = (new App($config, $this->session, $clock, $pdo))->withWhiteboardModeration($this->whiteboard)->withAuthService(new TutorAuthService(
             new TutorAccounts($pdo, $clock),
             new PasswordHasher(1024, 1, 1),
             new PasswordPolicy(PasswordPolicyTest::checker(false)),

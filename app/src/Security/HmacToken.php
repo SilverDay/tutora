@@ -30,7 +30,7 @@ final class HmacToken
         }
     }
 
-    /** @param array<string,scalar> $claims */
+    /** @param array<string,scalar|list<string>> $claims */
     public function issue(array $claims, int $ttlSeconds): string
     {
         if ($ttlSeconds <= 0) {

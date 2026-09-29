@@ -18,6 +18,7 @@ use Tutora\Participant\JoinFailure;
 use Tutora\Participant\ParticipantContext;
 use Tutora\Participant\ParticipantService;
 use Tutora\Support\ValidationException;
+use Tutora\Whiteboard\WhiteboardService;
 
 /**
  * Participant JSON API. Authenticated by a bearer participant credential
@@ -31,7 +32,18 @@ final class ParticipantApiController
         private readonly WallService $wall,
         private readonly QuizService $quiz,
         private readonly BlockStates $states,
+        private readonly WhiteboardService $whiteboard,
     ) {
+    }
+
+    /** Sidecar token for the current collaborative whiteboard/annotate block (presenter mode: none). */
+    public function whiteboardToken(Request $r): Response
+    {
+        $ctx = $this->ctx($r);
+        return $this->guard(function () use ($ctx, $r): Response {
+            $t = $this->whiteboard->participantToken($ctx, $r->intParam('block'));
+            return Response::json($t ?? ['presenter' => true]);
+        });
     }
 
     public function join(Request $r): Response

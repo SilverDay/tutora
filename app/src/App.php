@@ -32,6 +32,11 @@ use Tutora\Security\HmacToken;
 use Tutora\Session\SessionService;
 use Tutora\Tenant\TenantDb;
 use Tutora\Workshop\WorkshopRepository;
+use Tutora\Whiteboard\NullWhiteboardModeration;
+use Tutora\Whiteboard\SidecarWhiteboardModeration;
+use Tutora\Whiteboard\SnapshotService;
+use Tutora\Whiteboard\WhiteboardModeration;
+use Tutora\Whiteboard\WhiteboardService;
 use Tutora\Database\ConnectionFactory;
 use Tutora\Http\HttpException;
 use Tutora\Http\Request;
@@ -63,6 +68,7 @@ final class App
     private ?PDO $pdo = null;
     private ?TutorAuthService $auth = null;
     private ?Broadcaster $broadcaster = null;
+    private ?WhiteboardModeration $whiteboardModeration = null;
     private readonly Router $router;
     private readonly View $view;
     private readonly Csrf $csrf;
@@ -90,6 +96,7 @@ final class App
             }
             $this->view->share('csrf', $this->csrf->token());
             $this->view->share('realtimeUrl', $this->realtimeUrl());
+            $this->view->share('whiteboardUrl', $this->whiteboardUrl());
             $this->view->share('signedIn', false);
             $response = $this->router->dispatch($request);
         } catch (HttpException $e) {
@@ -101,7 +108,7 @@ final class App
             $this->logger->error('Unhandled exception', ['class' => $e::class, 'message' => $e->getMessage(), 'at' => $e->getFile() . ':' . $e->getLine()]);
             $response = $this->error($request, 500, 'Something went wrong.');
         }
-        return SecurityHeaders::apply($response, [self::originOf($this->realtimeUrl())], $this->config->isProduction());
+        return SecurityHeaders::apply($response, array_values(array_unique([self::originOf($this->realtimeUrl()), self::originOf($this->whiteboardUrl())])), $this->config->isProduction());
     }
 
     private function routes(): void
@@ -126,6 +133,7 @@ final class App
         $ss = fn (TenantContext $t) => new SessionController(
             $this->sessionService($t), $this->relayTokens(), $this->view, $this->tenantDb($t),
             $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(),
+            $this->whiteboardService(), $this->whiteboardModeration(), $this->snapshots($t),
         );
         $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->dashboard($q, $t)));
         $r->add('POST', '/workshops', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->create($q, $t)));
@@ -153,11 +161,15 @@ final class App
         $r->add('POST', '/sessions/{id:\d+}/wall/cards', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallAdd($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/wall/cards/{card:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallDelete($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/moderation/remove-actor', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->removeActor($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/whiteboard/clear', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->clearBoard($q, $t)));
+        $r->add('GET', '/snapshots/{snapshot:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->snapshotImage($q, $t)));
+        $r->add('POST', '/api/tutor/sessions/{id:\d+}/blocks/{block:\d+}/whiteboard-token', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->whiteboardToken($q, $t)));
+        $r->add('POST', '/api/tutor/sessions/{id:\d+}/blocks/{block:\d+}/snapshots', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->uploadSnapshot($q, $t)));
         $r->add('GET', '/api/tutor/sessions/{id:\d+}/state', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->state($q, $t)));
         $r->add('POST', '/api/tutor/sessions/{id:\d+}/connection-token', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->connectionToken($q, $t)));
 
         // participant (anonymous, bearer credential)
-        $p = fn () => new ParticipantApiController($this->participants(), $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates());
+        $p = fn () => new ParticipantApiController($this->participants(), $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(), $this->whiteboardService());
         $r->add('GET', '/join', fn () => $this->view->render('participant/join', ['title' => 'Join session'], 200, 'participant/layout'));
         $r->add('POST', '/api/participant/join', fn (Request $q) => $p()->join($q));
         $r->add('POST', '/api/participant/resume', fn (Request $q) => $p()->resume($q));
@@ -167,6 +179,7 @@ final class App
         $r->add('GET', '/api/participant/sessions/{id:\d+}/slides/{asset:\d+}', fn (Request $q) => $sl()->participantImage($q, $this->participants(), $this->pdo()));
         $pb = '/api/participant/sessions/{id:\d+}/blocks/{block:\d+}';
         $r->add('POST', $pb . '/submission', fn (Request $q) => $p()->submit($q));
+        $r->add('POST', $pb . '/whiteboard-token', fn (Request $q) => $p()->whiteboardToken($q));
         $r->add('POST', $pb . '/wall/cards', fn (Request $q) => $p()->addCard($q));
         $r->add('POST', $pb . '/wall/cards/{card:\d+}/move', fn (Request $q) => $p()->moveCard($q));
         $r->add('POST', $pb . '/wall/cards/{card:\d+}/edit', fn (Request $q) => $p()->editCard($q));
@@ -222,6 +235,17 @@ final class App
         return $url;
     }
 
+    /** Public WebSocket URL of the whiteboard sidecar (default: same host, path /wb). */
+    private function whiteboardUrl(): string
+    {
+        $url = $this->config->string('WHITEBOARD_URL', '');
+        if ($url === '') {
+            $base = $this->config->string('APP_BASE_URL', 'http://localhost');
+            $url = preg_replace('#^http#i', 'ws', rtrim($base, '/')) . '/wb';
+        }
+        return $url;
+    }
+
     private static function originOf(string $url): string
     {
         $p = parse_url($url);
@@ -252,7 +276,36 @@ final class App
 
     private function sessionService(TenantContext $t): SessionService
     {
-        return new SessionService($this->tenantDb($t), $this->clock, $this->broadcaster(), new AuditLog($this->pdo(), $this->clock), $this->config->int('RETENTION_DAYS_DEFAULT', 30));
+        return new SessionService($this->tenantDb($t), $this->clock, $this->broadcaster(), new AuditLog($this->pdo(), $this->clock),
+            $this->config->int('RETENTION_DAYS_DEFAULT', 30), $this->whiteboardModeration());
+    }
+
+    private function whiteboardService(): WhiteboardService
+    {
+        return new WhiteboardService($this->pdo(), new HmacToken($this->config->key('WHITEBOARD_TOKEN_KEY'), HmacToken::AUD_WHITEBOARD, $this->clock));
+    }
+
+    private function whiteboardModeration(): WhiteboardModeration
+    {
+        if ($this->whiteboardModeration === null) {
+            $url = $this->config->string('WHITEBOARD_INTERNAL_URL', '');
+            $this->whiteboardModeration = $url === ''
+                ? new NullWhiteboardModeration()
+                : new SidecarWhiteboardModeration($url, $this->config->string('WHITEBOARD_INTERNAL_SECRET'), $this->logger);
+        }
+        return $this->whiteboardModeration;
+    }
+
+    private function snapshots(TenantContext $t): SnapshotService
+    {
+        return new SnapshotService($this->tenantDb($t), $this->config->string('STORAGE_PATH'), new RateLimiter($this->pdo(), $this->clock), $this->clock);
+    }
+
+    /** Test seam. */
+    public function withWhiteboardModeration(WhiteboardModeration $m): self
+    {
+        $this->whiteboardModeration = $m;
+        return $this;
     }
 
     private function relayTokens(): HmacToken

@@ -7,6 +7,7 @@
     <meta name="referrer" content="no-referrer">
     <title><?= $e($title ?? 'Tutora') ?> · Tutora</title>
     <meta name="tutora-realtime" content="<?= $e($realtimeUrl ?? '') ?>">
+    <meta name="tutora-whiteboard" content="<?= $e($whiteboardUrl ?? '') ?>">
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/assets/app.css">
     <script type="module" src="/assets/participant.js"></script>
