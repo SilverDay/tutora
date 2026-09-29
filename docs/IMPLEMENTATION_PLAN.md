@@ -25,6 +25,9 @@ Every deviation is also marked in code comments where it matters.
 | Primary keys | `BIGINT UNSIGNED AUTO_INCREMENT` internally. Yjs entities use UUIDv4 keys. | Authorization never relies on ID unguessability (spec: bare IDs are never authorization). |
 | FK deletion behaviour (Hardening §FK) | See §5. | Spec requires this to be explicit. |
 | Token signing keys | **Separate HMAC key per audience** (relay, whiteboard, participant credential), each token also carries `aud`. | Spec requires `aud`; with symmetric HMAC every verifier can also mint, so separate keys stop a compromised sidecar from minting relay or participant tokens. |
+| `sessions.expires_at` meaning | Interpreted as **purge-after timestamp** (`ended_at` + tenant retention). | Spec lists the column without defining it; the only expiry-related session concept in the spec is the TTL purge. |
+| Join-code uniqueness among live sessions | `active_join_code` column (= `join_code` while not ended, `NULL` after) with a `UNIQUE` index. | Enforced by the DB rather than by an application check-then-insert race. |
+| `sessions.current_session_block_id` FK | Single-column FK `ON DELETE SET NULL`; same-session check in the repository. | A composite FK forms a delete cycle with `session_blocks` CASCADE (verified). All other session-child tables use composite `(x_id, session_id)` FKs, so cross-session references are structurally impossible. |
 | `config_version` | Column on `workshop_blocks` and `session_blocks` (not inside the JSON). | Queryable, enforces presence via `NOT NULL`. |
 
 ## 3. Repository layout
