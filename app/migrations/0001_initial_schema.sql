@@ -144,11 +144,14 @@ CREATE TABLE session_blocks (
                                   'word','plot','word_cloud','write','wall') NOT NULL,
     config_snapshot          JSON             NOT NULL CHECK (JSON_VALID(config_snapshot)),
     config_version           SMALLINT UNSIGNED NOT NULL,
+    -- base image (slide / whiteboard / annotate background) at snapshot time
+    slide_asset_id           BIGINT UNSIGNED  NULL,
     PRIMARY KEY (id),
     UNIQUE KEY uq_session_blocks_id_session (id, session_id),
     UNIQUE KEY uq_session_blocks_position (session_id, position),
     CONSTRAINT fk_session_blocks_session FOREIGN KEY (session_id)               REFERENCES sessions (id)        ON DELETE CASCADE,
-    CONSTRAINT fk_session_blocks_source  FOREIGN KEY (source_workshop_block_id) REFERENCES workshop_blocks (id) ON DELETE SET NULL
+    CONSTRAINT fk_session_blocks_source  FOREIGN KEY (source_workshop_block_id) REFERENCES workshop_blocks (id) ON DELETE SET NULL,
+    CONSTRAINT fk_session_blocks_asset   FOREIGN KEY (slide_asset_id)           REFERENCES slide_assets (id)    ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Single-column FK with SET NULL: a composite (block, session) FK here would form a
