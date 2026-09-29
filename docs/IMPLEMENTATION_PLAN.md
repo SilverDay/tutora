@@ -134,3 +134,6 @@ Each phase ends with passing tests and is committed separately.
 - **LLM provider / DPA / EU endpoint**: provider interface is built; no vendor wired until chosen.
 - **Size limits**: proposed defaults (configurable): display name 40 chars, Wall card 500, Write response 2000, Word Cloud word 40, Yjs message 64 KiB, upload 50 MiB.
 - **HIBP fail-open vs fail-closed** default is fail-closed; revisit if it causes signup friction.
+- **TOTP enrolment QR code**: zero-runtime-deps rules out a server-side QR library. Enrolment currently shows the base32 setup key and the `otpauth://` URI. Options: vendor a small client-side QR script (no build step) or accept manual entry.
+- **MFA recovery**: the spec mandates TOTP but defines no recovery path (lost device). Proposal: one-time recovery codes (hashed) generated at enrolment, plus an audited admin reset.
+- **Signup account enumeration**: "email already registered" is revealed at signup because v1 has no email verification. Removing it requires an email-verification flow (would also need outbound mail).
