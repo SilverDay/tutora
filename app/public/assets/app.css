@@ -37,3 +37,30 @@ pre.mono { white-space: pre-wrap; overflow-wrap: anywhere; }
 button.secondary { background: var(--border); color: var(--fg); }
 button.danger { background: #b42318; }
 .joincode code { font-size: 1.6em; letter-spacing: .15em; }
+.bar { display: grid; grid-template-columns: minmax(80px, 30%) 1fr auto; gap: 8px; align-items: center; margin: 4px 0; }
+.bar meter { width: 100%; height: 1.1em; }
+.bar-value { font-variant-numeric: tabular-nums; }
+.results { margin-top: 16px; }
+.choice { display: block; font-weight: 400; margin: 6px 0; }
+.activity input[type=text], .activity input[type=number] { max-width: 320px; }
+.activity fieldset { border: 1px solid var(--border); border-radius: 6px; }
+.cloud { line-height: 2; }
+.cloud-word { margin-right: 12px; display: inline-block; }
+.size-1 { font-size: .9em; } .size-2 { font-size: 1.15em; } .size-3 { font-size: 1.4em; }
+.size-4 { font-size: 1.75em; } .size-5 { font-size: 2.1em; font-weight: 700; }
+.plot { width: 100%; max-width: 360px; }
+.plot-frame { fill: none; stroke: var(--border); }
+.plot-axis, .plot-label { fill: var(--fg); font-size: 11px; }
+.plot-pt { fill-opacity: .75; }
+.series-0 { fill: #2456d6; } .series-1 { fill: #c2410c; } .series-2 { fill: #15803d; }
+.series-3 { fill: #7e22ce; } .series-4 { fill: #b45309; } .series-5 { fill: #0e7490; }
+.wall { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+.wall-col { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.wall-card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; margin: 6px 0; }
+.wall-card.mine { border-color: var(--accent); }
+.wall-card p { margin: 0 0 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.response-text { white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+.responses li { margin: 8px 0; }
+.timer { font-weight: 700; font-variant-numeric: tabular-nums; }
+.quiz-q, .quiz-result { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
+ol.rank li { margin: 6px 0; }

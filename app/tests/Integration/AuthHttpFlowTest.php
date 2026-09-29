@@ -119,6 +119,16 @@ final class AuthHttpFlowTest extends TestCase
         self::assertStringContainsString("script-src 'self'", $r->headers['Content-Security-Policy']);
         self::assertSame('nosniff', $r->headers['X-Content-Type-Options']);
         self::assertArrayHasKey('Strict-Transport-Security', $r->headers);
+        // regression: no-referrer makes browsers send "Origin: null" on same-site form posts,
+        // which breaks every tutor form behind the CSRF Origin check
+        self::assertSame('same-origin', $r->headers['Referrer-Policy']);
+    }
+
+    public function testNullOriginIsRefused(): void
+    {
+        $this->get('/login');
+        $r = $this->app->handle(new Request('POST', '/login', post: ['_csrf' => (string) $this->session->get('_csrf')], headers: ['origin' => 'null']));
+        self::assertSame(403, $r->status);
     }
 
     public function testReflectedInputIsEncoded(): void

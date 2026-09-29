@@ -12,5 +12,6 @@
 <section class="card" id="session-view" hidden>
     <h1 id="session-title"></h1>
     <p class="muted" id="session-status"></p>
+    <div id="feedback" role="status" hidden></div>
     <div id="block"></div>
 </section>

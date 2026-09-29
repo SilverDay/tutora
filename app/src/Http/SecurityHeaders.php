@@ -15,7 +15,10 @@ final class SecurityHeaders
                 . "img-src 'self' blob: data:; connect-src {$connect}; object-src 'none'; "
                 . "base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
             'X-Content-Type-Options' => 'nosniff',
-            'Referrer-Policy' => 'no-referrer',
+            // same-origin, not no-referrer: with no-referrer browsers send "Origin: null" on
+            // same-site form POSTs, which the CSRF Origin check (correctly) refuses. same-origin
+            // still never sends a referrer to other sites.
+            'Referrer-Policy' => 'same-origin',
             'X-Frame-Options' => 'DENY',
             'Cross-Origin-Opener-Policy' => 'same-origin',
             'Permissions-Policy' => 'camera=(), microphone=(), geolocation=()',

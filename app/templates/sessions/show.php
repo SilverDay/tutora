@@ -1,7 +1,9 @@
+<?php /** @var callable $e @var callable $partial @var array<string,mixed> $session @var array<string,mixed> $state @var list<array<string,mixed>> $blocks */ ?>
 <?php if ($session['status'] === 'live'): ?><script type="module" src="/assets/tutor-session.js"></script><?php endif; ?>
-<?php /** @var callable $e @var array<string,mixed> $session @var array<string,mixed> $state @var list<array<string,mixed>> $blocks */ ?>
+<?php $current = $state['current_block']; ?>
 <section class="card">
     <h1><?= $e($session['workshop_title_snapshot']) ?></h1>
+    <?= $partial('_errors', ['errors' => $errors]) ?>
     <?php if ($session['status'] !== 'ended'): ?>
         <p class="joincode">Join at <strong>/join</strong> with code <code><?= $e($session['join_code']) ?></code></p>
     <?php else: ?>
@@ -13,6 +15,56 @@
         <?php endif; ?>
     </p>
 </section>
+
+<?php if ($current !== null): ?>
+<section class="card">
+    <h2>Current: <?= $e($current['type']) ?></h2>
+    <p><?= $e($current['config']['prompt'] ?? $current['config']['question'] ?? '') ?></p>
+
+    <?php if ($current['type'] === 'quiz' && $session['status'] === 'live'): ?>
+        <?php $quiz = $current['state']['quiz'] ?? null; ?>
+        <ol class="quiz-admin">
+        <?php foreach ($current['config']['questions'] as $i => $q): ?>
+            <?php $qs = $quiz['questions'][$i] ?? []; ?>
+            <li>
+                <strong><?= $e($q['prompt']) ?></strong>
+                <span class="muted">(<?= $e($q['type']) ?><?= isset($q['time_limit_seconds']) ? ', ' . $e($q['time_limit_seconds']) . ' s' : '' ?>)</span>
+                <?php if ($current['config']['pacing'] === 'tutor'): ?>
+                    · <span class="muted"><?= $e($qs['status'] ?? 'PENDING') ?></span>
+                    <?php foreach (['start' => 'Start', 'reveal' => 'Reveal'] as $action => $label): ?>
+                        <?php if (($action === 'start' && ($qs['status'] ?? 'PENDING') === 'PENDING') || ($action === 'reveal' && ($qs['status'] ?? '') === 'OPEN')): ?>
+                        <form method="post" action="/sessions/<?= $e($session['id']) ?>/quiz/<?= $e($action) ?>" class="inline">
+                            <input type="hidden" name="_csrf" value="<?= $e($csrf) ?>">
+                            <input type="hidden" name="block" value="<?= $e($current['id']) ?>">
+                            <input type="hidden" name="question" value="<?= $e($q['id']) ?>">
+                            <button type="submit"><?= $e($label) ?></button>
+                        </form>
+                        <?php endif; ?>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </li>
+        <?php endforeach; ?>
+        </ol>
+        <?php if ($current['config']['pacing'] === 'self'): ?><p class="muted">Self-paced: participants work through the questions on their own.</p><?php endif; ?>
+    <?php endif; ?>
+
+    <?php if ($current['type'] === 'wall' && $session['status'] === 'live'): ?>
+        <form method="post" action="/sessions/<?= $e($session['id']) ?>/wall/cards" class="row">
+            <input type="hidden" name="_csrf" value="<?= $e($csrf) ?>">
+            <input type="hidden" name="block" value="<?= $e($current['id']) ?>">
+            <label>Seed a card <input type="text" name="text" maxlength="500" required></label>
+            <label>Column
+                <select name="column_id">
+                    <?php foreach ($current['config']['columns'] as $c): ?><option value="<?= $e($c['id']) ?>"><?= $e($c['label']) ?></option><?php endforeach; ?>
+                </select>
+            </label>
+            <button type="submit">Add</button>
+        </form>
+    <?php endif; ?>
+
+    <div id="tutor-results" class="results" data-session-id="<?= $e($session['id']) ?>"></div>
+</section>
+<?php endif; ?>
 
 <section class="card">
     <h2>Sequence</h2>
