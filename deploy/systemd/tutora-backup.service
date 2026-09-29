@@ -1,8 +1,9 @@
-# Daily backup (DB dump + storage archive, 14-day retention) followed by the mandatory restore
-# test of the new backup. A failure of either step fails the unit; hook alerting in via
-# OnFailure= (e.g. a mail unit) in a drop-in.
+# Daily encrypted backup (DB dump + storage archive + SHA-256 manifest, 14-day retention),
+# followed by the on-host verification (checksums, encrypted to the right key). The private key
+# is kept off-host (owner decision 22): the full restore test runs on the off-host restore
+# machine (deploy/offhost). A failure fails the unit; add alerting via an OnFailure= drop-in.
 [Unit]
-Description=Tutora backup and restore test
+Description=Tutora encrypted backup and verification
 After=mariadb.service
 
 [Service]
@@ -11,13 +12,13 @@ User=tutora-backup
 Group=tutora-backup
 EnvironmentFile=/etc/tutora/backup.env
 ExecStart=/var/www/tutora/deploy/backup/tutora-backup.sh
-ExecStart=/var/www/tutora/deploy/backup/tutora-restore-test.sh
+ExecStart=/var/www/tutora/deploy/backup/tutora-backup-verify.sh
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-# backups, and the GnuPG home used to decrypt for the restore test (if backups are encrypted)
-ReadWritePaths=/var/backups/tutora -/var/lib/tutora-backup
+# backups, and the GnuPG home (public key only; gpg writes its trustdb/lock files there)
+ReadWritePaths=/var/backups/tutora /var/lib/tutora-backup
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=yes

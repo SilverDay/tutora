@@ -199,7 +199,8 @@ Each phase ends with passing tests and is committed separately.
 | 16 | AI summary sharing | **Only if based on ≥ 3 responses** (`SummaryService::MIN_RESPONSES_TO_SHARE`; counted on the responses actually sent to the model), so a shared summary cannot reveal an individual answer. |
 | 17 | AI limits | **Defaults kept:** 200 calls and 500 000 tokens per tenant per UTC month; 10 calls per session per UTC day (all configurable in `.env`). |
 | 18 | "Hide results" scope | **Confirmed:** aggregate block types only; not Wall (shared content) and not Quiz (own reveal). |
-| 19 | Backup encryption | **Mandatory:** `tutora-backup.sh` refuses to run without a GPG recipient whose public key is in the keyring; encryption is streamed (no plaintext on disk). Open: where the private key for the restore test lives. |
+| 19 | Backup encryption | **Mandatory:** `tutora-backup.sh` refuses to run without a GPG recipient whose public key is in the keyring; encryption is streamed (no plaintext on disk). |
+| 22 | Private backup key | **Off-host.** Production holds only the public key and runs `tutora-backup-verify.sh` (SHA-256 manifest, encrypted to the right key). An off-host restore machine pulls the backups read-only (`rrsync -ro`, pull model: production has no credentials for it), keeps them 14 days and runs the full restore test with the private key; the schema is compared column by column with the backup's own migrations, and backups older than 26 h fail the test. |
 | 20 | Sessions never ended by the tutor | **Ended automatically 24 h after start** (`SESSION_MAX_LIVE_HOURS`), which starts their retention period; hourly maintenance timer; audited as `session.auto_ended`. |
 | 21 | Static analysis | **PHPStan level 8, no baseline, in CI** (`app/phpstan.neon`). |
 | – | `whiteboard_entities` | **Removed** (see §2). |

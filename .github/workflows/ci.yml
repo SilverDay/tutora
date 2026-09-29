@@ -46,8 +46,9 @@ jobs:
       - run: vendor/bin/phpunit
 
   backup:
-    # deploy/backup: backup + mandatory restore test (plain and GPG), with the grants from
-    # deploy/README.md, run with the MariaDB client tools of the server's own image
+    # deploy/backup: encrypted backup + on-host verify (public key only) + off-host pull and full
+    # restore test (private key), with the grants from deploy/README.md, run with the MariaDB
+    # client tools of the server's own image
     runs-on: ubuntu-24.04
     services:
       mariadb:
@@ -78,10 +79,10 @@ jobs:
       - name: Backup and restore test
         run: |
           mkdir -p "$RUNNER_TEMP/storage/slides" && echo test > "$RUNNER_TEMP/storage/slides/x.png"
-          docker run --rm --network host -v "$PWD/deploy:/deploy:ro" -v "$RUNNER_TEMP/storage:/storage:ro" \
+          docker run --rm --network host -v "$PWD:/repo:ro" -v "$RUNNER_TEMP/storage:/storage:ro" \
             -e DB_HOST=127.0.0.1 -e DB_ADMIN_USER=root -e DB_ADMIN_PASSWORD=ci_root_only \
-            -e DB_NAME=tutora -e STORAGE_PATH=/storage mariadb:10.11 bash -c \
-            'rm -f /etc/apt/sources.list.d/mariadb* && apt-get update -qq && apt-get install -y -qq gpg-agent > /dev/null && bash /deploy/backup/ci-backup-test.sh'
+            -e DB_NAME=tutora -e STORAGE_PATH=/storage -e MIGRATIONS_DIR=/repo/app/migrations mariadb:10.11 bash -c \
+            'rm -f /etc/apt/sources.list.d/mariadb* && apt-get update -qq && apt-get install -y -qq gpg-agent rsync > /dev/null && bash /repo/deploy/backup/ci-backup-test.sh'
 
   relay:
     runs-on: ubuntu-24.04

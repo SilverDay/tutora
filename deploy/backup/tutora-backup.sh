@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Tutora backup: database dump + storage archive, 14-day retention (owner decision 5).
-# Run by deploy/systemd/tutora-backup.timer, followed by tutora-restore-test.sh (spec: a
-# restore test is a required part of the backup routine).
+# Run by deploy/systemd/tutora-backup.timer, followed by tutora-backup-verify.sh. The private
+# key is kept off-host (owner decision 22): the full restore test runs on the off-host restore
+# machine (tutora-offhost-restore-test.sh), which pulls these files.
 #
 # Configuration (environment, e.g. /etc/tutora/backup.env):
 #   BACKUP_DIR            where backups are written (default /var/backups/tutora), not web-served
@@ -14,7 +15,11 @@
 #                         while being written; only the public key needs to be on this host
 #   GNUPGHOME             keyring containing that public key
 set -euo pipefail
-umask 077
+# BACKUP_UMASK: 077 (default) or 027 when the off-host pull account (group tutora-backup) must read
+# the files — they are encrypted, so the group sees ciphertext only
+BACKUP_UMASK=${BACKUP_UMASK:-077}
+[[ "$BACKUP_UMASK" == 077 || "$BACKUP_UMASK" == 027 ]] || { echo "tutora-backup: BACKUP_UMASK must be 077 or 027" >&2; exit 2; }
+umask "$BACKUP_UMASK"
 
 BACKUP_DIR=${BACKUP_DIR:-/var/backups/tutora}
 BACKUP_DB_CNF=${BACKUP_DB_CNF:-/etc/tutora/backup.cnf}
@@ -32,7 +37,7 @@ log() { echo "tutora-backup: $*" >&2; }
 gpg --batch --list-keys "$BACKUP_GPG_RECIPIENT" > /dev/null 2>&1 \
   || { log "no public key for BACKUP_GPG_RECIPIENT in the keyring"; exit 2; }
 mkdir -p "$BACKUP_DIR"
-chmod 700 "$BACKUP_DIR"
+if [[ "$BACKUP_UMASK" == 027 ]]; then chmod 750 "$BACKUP_DIR"; else chmod 700 "$BACKUP_DIR"; fi
 
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 db_file="$BACKUP_DIR/tutora-db-$stamp.sql.gz.gpg"
@@ -40,6 +45,7 @@ files_file="$BACKUP_DIR/tutora-files-$stamp.tar.gz.gpg"
 tmp_db="$db_file.partial"
 tmp_files="$files_file.partial"
 trap 'rm -f "$tmp_db" "$tmp_files"' EXIT
+[[ ! -e "$BACKUP_DIR/tutora-manifest-$stamp.sha256" ]] || { log "backup $stamp already exists"; exit 2; }
 
 # encryption is streamed: no plaintext copy ever reaches the disk
 seal() {
@@ -57,7 +63,9 @@ tar -C "$STORAGE_PATH" --exclude=./staging --exclude=./mail-outbox -czf - . | se
 
 mv "$tmp_db" "$db_file"
 mv "$tmp_files" "$files_file"
-log "wrote $(basename "$db_file") and $(basename "$files_file")"
+# integrity manifest (checked by tutora-backup-verify.sh here and by the off-host restore test)
+(cd "$BACKUP_DIR" && sha256sum "$(basename "$db_file")" "$(basename "$files_file")") > "$BACKUP_DIR/tutora-manifest-$stamp.sha256"
+log "wrote $(basename "$db_file"), $(basename "$files_file") and the manifest"
 
 # retention: delete backups older than BACKUP_RETENTION_DAYS days
 find "$BACKUP_DIR" -maxdepth 1 -type f -name 'tutora-*' -mmin +$((BACKUP_RETENTION_DAYS * 24 * 60)) -print -delete \

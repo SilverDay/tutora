@@ -1,0 +1,27 @@
+# Runs on the OFF-HOST restore machine (owner decision 22), not on the production host:
+# pulls new encrypted backups (read-only rsync over SSH), keeps them 14 days, and runs the full
+# restore test with the private key. Alert on failure via an OnFailure= drop-in.
+# /etc/tutora-restore/restore.env: OFFHOST_SOURCE, OFFHOST_SSH, BACKUP_DIR, BACKUP_DB_CNF,
+# MIGRATIONS_DIR, GNUPGHOME (see deploy/README.md "Off-host restore machine").
+[Unit]
+Description=Tutora off-host backup copy and restore test
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tutora-restore
+Group=tutora-restore
+EnvironmentFile=/etc/tutora-restore/restore.env
+ExecStart=/opt/tutora/deploy/backup/tutora-offhost-restore-test.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/backups/tutora-offhost /var/lib/tutora-restore
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0077

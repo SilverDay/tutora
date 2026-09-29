@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily Tutora off-host backup copy and restore test (after the production backup)
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
