@@ -5,6 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $e($title ?? 'Tutora') ?> · Tutora</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="/assets/app.css">
 </head>
 <body>

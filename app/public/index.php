@@ -2,6 +2,14 @@
 
 declare(strict_types=1);
 
+// PHP built-in dev server only: let it serve existing static files (Apache does this via .htaccess)
+if (PHP_SAPI === 'cli-server') {
+    $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
+    if (is_string($path) && $path !== '/' && is_file(__DIR__ . $path) && !str_contains($path, '..')) {
+        return false;
+    }
+}
+
 require __DIR__ . '/../vendor/autoload.php';
 
 use Tutora\App;

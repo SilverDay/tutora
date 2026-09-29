@@ -14,6 +14,16 @@ use Tutora\Auth\SessionStore;
 use Tutora\Auth\TutorAccounts;
 use Tutora\Auth\TutorAuthService;
 use Tutora\Controller\AuthController;
+use Tutora\Controller\ParticipantApiController;
+use Tutora\Controller\SessionController;
+use Tutora\Controller\WorkshopController;
+use Tutora\Participant\ParticipantService;
+use Tutora\Realtime\Broadcaster;
+use Tutora\Realtime\NullBroadcaster;
+use Tutora\Security\HmacToken;
+use Tutora\Session\SessionService;
+use Tutora\Tenant\TenantDb;
+use Tutora\Workshop\WorkshopRepository;
 use Tutora\Database\ConnectionFactory;
 use Tutora\Http\HttpException;
 use Tutora\Http\Request;
@@ -44,6 +54,7 @@ final class App
 
     private ?PDO $pdo = null;
     private ?TutorAuthService $auth = null;
+    private ?Broadcaster $broadcaster = null;
     private readonly Router $router;
     private readonly View $view;
     private readonly Csrf $csrf;
@@ -100,7 +111,34 @@ final class App
         $r->add('POST', '/login/enroll', fn (Request $q) => $auth()->confirmEnroll($q));
         $r->add('POST', '/logout', fn (Request $q) => $auth()->logout($q));
 
-        $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $this->view->render('dashboard', ['title' => 'Dashboard'])));
+        // tutor: workshops & sessions
+        $ws = fn (TenantContext $t) => new WorkshopController(new WorkshopRepository($this->tenantDb($t), $this->clock), $this->sessionService($t), new AuditLog($this->pdo(), $this->clock), $this->view);
+        $ss = fn (TenantContext $t) => new SessionController($this->sessionService($t), $this->relayTokens(), $this->view);
+        $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->dashboard($q, $t)));
+        $r->add('POST', '/workshops', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->create($q, $t)));
+        $r->add('GET', '/workshops/{id:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->show($q, $t)));
+        $r->add('POST', '/workshops/{id:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->update($q, $t)));
+        $r->add('POST', '/workshops/{id:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->delete($q, $t)));
+        $r->add('POST', '/workshops/{id:\d+}/blocks', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->addBlock($q, $t)));
+        $r->add('POST', '/workshops/{id:\d+}/sessions', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->startSession($q, $t)));
+        $r->add('POST', '/blocks/{block:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->updateBlock($q, $t)));
+        $r->add('POST', '/blocks/{block:\d+}/move', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->moveBlock($q, $t)));
+        $r->add('POST', '/blocks/{block:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->deleteBlock($q, $t)));
+        $r->add('GET', '/sessions/{id:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->show($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/navigate', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->navigate($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/end', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->end($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->delete($q, $t)));
+        $r->add('GET', '/api/tutor/sessions/{id:\d+}/state', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->state($q, $t)));
+        $r->add('POST', '/api/tutor/sessions/{id:\d+}/connection-token', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->connectionToken($q, $t)));
+
+        // participant (anonymous, bearer credential)
+        $p = fn () => new ParticipantApiController($this->participants());
+        $r->add('GET', '/join', fn () => $this->view->render('participant/join', ['title' => 'Join session'], 200, 'participant/layout'));
+        $r->add('POST', '/api/participant/join', fn (Request $q) => $p()->join($q));
+        $r->add('POST', '/api/participant/resume', fn (Request $q) => $p()->resume($q));
+        $r->add('POST', '/api/participant/sessions/{id:\d+}/presence', fn (Request $q) => $p()->presence($q));
+        $r->add('GET', '/api/participant/sessions/{id:\d+}/state', fn (Request $q) => $p()->state($q));
+        $r->add('POST', '/api/participant/sessions/{id:\d+}/connection-token', fn (Request $q) => $p()->connectionToken($q));
         $r->add('GET', '/account/password', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->showPassword($q, $t)));
         $r->add('POST', '/account/password', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->changePassword($q, $t)));
     }
@@ -117,6 +155,9 @@ final class App
         return function (Request $request) use ($handler): Response {
             $tenant = $this->auth()->currentTenant();
             if ($tenant === null) {
+                if (str_starts_with($request->path, '/api/')) {
+                    throw new HttpException(401, 'Not signed in');
+                }
                 return Response::redirect('/login');
             }
             $this->view->share('signedIn', true);
@@ -144,6 +185,38 @@ final class App
             }
         }
         return false;
+    }
+
+    private function tenantDb(TenantContext $t): TenantDb
+    {
+        return new TenantDb($this->pdo(), $t);
+    }
+
+    private function sessionService(TenantContext $t): SessionService
+    {
+        return new SessionService($this->tenantDb($t), $this->clock, $this->broadcaster(), new AuditLog($this->pdo(), $this->clock), $this->config->int('RETENTION_DAYS_DEFAULT', 30));
+    }
+
+    private function relayTokens(): HmacToken
+    {
+        return new HmacToken($this->config->key('RELAY_TOKEN_KEY'), HmacToken::AUD_RELAY, $this->clock);
+    }
+
+    private function participants(): ParticipantService
+    {
+        return new ParticipantService(
+            $this->pdo(),
+            $this->clock,
+            new HmacToken($this->config->key('PARTICIPANT_CREDENTIAL_KEY'), HmacToken::AUD_PARTICIPANT, $this->clock),
+            $this->relayTokens(),
+            new RateLimiter($this->pdo(), $this->clock),
+        );
+    }
+
+    private function broadcaster(): Broadcaster
+    {
+        // replaced by the relay HTTP client in Phase 4
+        return $this->broadcaster ??= new NullBroadcaster();
     }
 
     public function pdo(): PDO

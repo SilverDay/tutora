@@ -25,3 +25,15 @@ form.inline { display: inline; }
 .alert ul { margin: 0; padding-left: 18px; }
 .notice { background: var(--ok-bg); color: var(--ok); border-radius: 6px; padding: 8px 12px; }
 .secret code { word-break: break-all; font-size: 1.05em; }
+table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+textarea, select { display: block; width: 100%; margin-top: 4px; padding: 8px 10px; font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; }
+.mono { font-family: ui-monospace, monospace; font-size: .9em; }
+pre.mono { white-space: pre-wrap; overflow-wrap: anywhere; }
+.row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-top: 12px; }
+.card + .card { margin-top: 16px; }
+.blocks li { margin: 12px 0; }
+.blocks li.current { font-weight: 700; }
+button.secondary { background: var(--border); color: var(--fg); }
+button.danger { background: #b42318; }
+.joincode code { font-size: 1.6em; letter-spacing: .15em; }
