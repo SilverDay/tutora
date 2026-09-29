@@ -1,0 +1,34 @@
+# Development environment (spec: Deployment & Infrastructure).
+# Services for later phases (relay, whiteboard, converter) are added as they are implemented.
+services:
+  app:        # PHP 8.3 + Apache
+    build: ./app
+    env_file: .env
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./app:/var/www/tutora
+      - storage:/var/lib/tutora
+    depends_on:
+      mariadb:
+        condition: service_healthy
+
+  mariadb:    # 10.11+
+    image: mariadb:10.11
+    environment:
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_RANDOM_ROOT_PASSWORD: "1"
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      retries: 20
+
+volumes:
+  dbdata:
+  storage:

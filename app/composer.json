@@ -1,0 +1,30 @@
+{
+    "name": "silverday/tutora",
+    "description": "Tutora live workshop/tutoring session assistant - PHP application",
+    "type": "project",
+    "license": "proprietary",
+    "require": {
+        "php": "~8.3.0",
+        "ext-pdo": "*",
+        "ext-pdo_mysql": "*",
+        "ext-sodium": "*",
+        "ext-mbstring": "*",
+        "ext-curl": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "autoload": {
+        "psr-4": { "Tutora\\": "src/" }
+    },
+    "autoload-dev": {
+        "psr-4": { "Tutora\\Tests\\": "tests/" }
+    },
+    "config": {
+        "platform": { "php": "8.3.6" },
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}

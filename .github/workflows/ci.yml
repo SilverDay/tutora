@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  php:
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_DATABASE: tutora_test
+          MARIADB_USER: tutora
+          MARIADB_PASSWORD: tutora_dev
+          MARIADB_RANDOM_ROOT_PASSWORD: "1"
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-retries=20
+    defaults:
+      run:
+        working-directory: app
+    env:
+      TEST_DB_HOST: 127.0.0.1
+      TEST_DB_PORT: "3306"
+      TEST_DB_NAME: tutora_test
+      TEST_DB_USER: tutora
+      TEST_DB_PASSWORD: tutora_dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql, sodium, mbstring, curl
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+      - name: Lint
+        run: find src public bin tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - run: vendor/bin/phpunit
