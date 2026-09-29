@@ -90,10 +90,12 @@ async function refresh() {
 
 if (sessionId) {
   refresh();
-  connectRealtime({
+  const rt = connectRealtime({
     getToken,
     onStatus: (up) => { if (!up && presence) presence.textContent = 'realtime offline'; },
     onMessage: (msg) => {
+      // let other modules (whiteboard) see relay messages
+      document.dispatchEvent(new CustomEvent('tutora:realtime', { detail: msg }));
       if (msg.type === 'presence' && presence) {
         presence.textContent = `${msg.participants} participant${msg.participants === 1 ? '' : 's'} connected`;
       } else if (msg.type === 'session_ended' && presence) {
@@ -104,4 +106,5 @@ if (sessionId) {
     },
     isFinal: (code) => code === 4410,
   });
+  window.tutoraRealtime = { send: (msg) => rt.send(msg) };
 }

@@ -56,5 +56,7 @@ export function connectRealtime({ getToken, onMessage, onStatus = () => {}, isFi
   open();
   return {
     close() { stopped = true; clearTimeout(timer); if (ws) ws.close(1000); },
+    /** Sends a JSON message if connected (e.g. presenter whiteboard strokes). */
+    send(msg) { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg)); },
   };
 }

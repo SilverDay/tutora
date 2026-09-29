@@ -12,7 +12,7 @@ const POLL_INTERVAL_MS = 5000;
 
 const state = {
   sessionId: null, credential: null, revision: -1, timers: [], rt: null, live: false,
-  block: null, quizSig: null, countdown: null, slideUrl: null,
+  block: null, quizSig: null, countdown: null, slideUrl: null, board: null, actorId: null, renderGen: 0,
 };
 
 // ------------------------------------------------------------------ API
@@ -347,6 +347,40 @@ function updateDynamic(block) {
   }
 }
 
+/** Collaborative (sidecar) or presenter (relay, read-only) board for the current block. */
+async function mountBoard(holder, block) {
+  if (state.board) { state.board.close(); state.board = null; }
+  // abandon only if the block was re-rendered meanwhile (state refreshes replace the object)
+  const gen = state.renderGen;
+  const first = await authed('POST', blockPath('/whiteboard-token'));
+  if (!first || first.status !== 200 || gen !== state.renderGen) return;
+  const presenter = first.data.presenter === true;
+  let pending = presenter ? null : first.data.token;
+  const mod = await import('./whiteboard.bundle.js');
+  if (gen !== state.renderGen) return;
+  state.board = mod.mount(holder, {
+    kind: block.type === 'annotate' ? 'annotate' : 'whiteboard',
+    mode: presenter ? 'presenter' : 'collaborative',
+    role: presenter ? 'spectator' : 'participant',
+    actor: state.actorId,
+    blockId: block.id,
+    tags: block.config.tags ?? [],
+    url: document.querySelector('meta[name="tutora-whiteboard"]')?.content ?? '',
+    getToken: async () => {
+      if (pending) { const t = pending; pending = null; return t; }
+      const r = await authed('POST', blockPath('/whiteboard-token'));
+      return r && r.status === 200 ? r.data.token ?? null : null;
+    },
+    background: async () => {
+      if (!block.slide_asset_id) return null;
+      const img = await slideImage(block.slide_asset_id);
+      if (img.tagName !== 'IMG') return null;
+      await img.decode().catch(() => {});
+      return img;
+    },
+  });
+}
+
 /** Loads a slide image with the participant credential (img tags cannot send headers). */
 async function slideImage(assetId) {
   const r = await fetch(`/api/participant/sessions/${encodeURIComponent(state.sessionId)}/slides/${encodeURIComponent(assetId)}`, {
@@ -367,18 +401,26 @@ function renderBlock(block) {
   flash('');
   clearInterval(state.countdown);
   state.quizSig = null;
+  if (state.board) { state.board.close(); state.board = null; }
+  state.renderGen++;
   state.block = block;
   if (!block) { root.append(el('p', { class: 'muted', text: 'Waiting for the tutor…' })); return; }
   const c = block.config || {};
-  if (block.slide_asset_id) {
+  if (block.slide_asset_id && block.type !== 'whiteboard' && block.type !== 'annotate') {
     const holder = el('div', { class: 'slide-holder' });
     root.append(holder);
-    slideImage(block.slide_asset_id).then((node) => { if (state.block === block) holder.replaceChildren(node); });
+    const gen = state.renderGen;
+    slideImage(block.slide_asset_id).then((node) => { if (gen === state.renderGen) holder.replaceChildren(node); });
+  }
+  if (block.type === 'whiteboard' || block.type === 'annotate') {
+    const holder = el('div', { class: 'wb' });
+    root.append(holder);
+    mountBoard(holder, block);
   }
   const make = controls[block.type];
   root.append(
     make ? make(c, block.state?.mine ?? null)
-      : el('p', { class: 'muted', text: ['quiz', 'slide'].includes(block.type) ? '' : 'Follow along with your tutor.' }),
+      : el('p', { class: 'muted', text: ['quiz', 'slide', 'whiteboard', 'annotate'].includes(block.type) ? (c.prompt ?? '') : 'Follow along with your tutor.' }),
     el('div', { id: 'dynamic' }),
     el('div', { id: 'results', class: 'results' }),
   );
@@ -391,6 +433,7 @@ async function refresh() {
   const r = await authed('GET', '/state');
   if (!r || r.status !== 200) return;
   const s = r.data;
+  state.actorId = s.actor_id;
   document.getElementById('session-title').textContent = s.title ?? 'Session';
   document.getElementById('session-status').textContent = s.status === 'live' ? 'Live' : 'Ended';
   if (s.session_revision !== state.revision) {
@@ -417,6 +460,7 @@ function stopTimers() {
 }
 
 function onRealtime(msg) {
+  document.dispatchEvent(new CustomEvent('tutora:realtime', { detail: msg }));
   switch (msg.type) {
     case 'auth_ok':
       refresh(); // (re)subscribed: cover anything missed while offline

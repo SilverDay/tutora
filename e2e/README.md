@@ -5,6 +5,11 @@ daemon (sandboxed container), thumbnails, slide blocks and a live session until 
 participant sees the rendered slide. It needs `bin/conversion-daemon.php` running with a
 built `CONVERTER_IMAGE`.
 
+`whiteboard.e2e.mjs` checks collaborative drawing in both directions, the own-entities-only
+eraser, annotate tags, presenter mode over the relay, clear, and snapshots (manual and on
+block exit) by sampling canvas pixels in the other browser. It needs the relay and the
+whiteboard sidecar running.
+
 `activities.e2e.mjs` drives the real UI in Chromium against a running stack: tutor signup
 with TOTP, workshop authoring, a live session with two participants, every activity type,
 both quiz modes, live updates over the relay, Write privacy, wall moderation, and it fails

@@ -72,3 +72,9 @@ ol.rank li { margin: 6px 0; }
 .thumb-inline { height: 48px; width: auto; vertical-align: middle; border: 1px solid var(--border); border-radius: 3px; margin-left: 8px; background: #fff; }
 .import { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 12px; }
 input[type=file] { display: block; margin-top: 4px; }
+.wb, #whiteboard { margin: 12px 0; }
+.wb-toolbar { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; }
+.wb-toolbar input[type=text] { max-width: 220px; margin: 0; display: inline-block; }
+.wb-tool[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.wb-canvas { display: block; border: 1px solid var(--border); border-radius: 6px; touch-action: none; background: #fff; cursor: crosshair; }
+.wb-status { display: block; margin-top: 4px; }

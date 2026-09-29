@@ -8,7 +8,7 @@
   "scripts": {
     "start": "node src/main.js",
     "test": "node --test test/*.test.js",
-    "build:client": "esbuild client/whiteboard.js --bundle --format=esm --minify --sourcemap=external --target=es2022 --outfile=../app/public/assets/whiteboard.bundle.js"
+    "build:client": "esbuild client/whiteboard.js --bundle --format=esm --minify --target=es2022 --outfile=../app/public/assets/whiteboard.bundle.js"
   },
   "dependencies": {
     "lib0": "0.2.119",

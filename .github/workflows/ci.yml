@@ -91,3 +91,5 @@ jobs:
           cache-dependency-path: whiteboard/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm test
+      - name: Committed client bundle matches its source
+        run: npm run build:client && git diff --exit-code -- ../app/public/assets/whiteboard.bundle.js
