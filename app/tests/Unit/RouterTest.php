@@ -20,6 +20,15 @@ final class RouterTest extends TestCase
         self::assertSame('{"id":42}', $resp->body);
     }
 
+    public function testCharacterClassPlaceholder(): void
+    {
+        $r = new Router();
+        $r->add('POST', '/quiz/{question:[A-Za-z0-9_-]+}/answer', static fn (Request $q) => new Response(200, $q->param('question')));
+        self::assertSame('q-1_a', $r->dispatch(new Request('POST', '/quiz/q-1_a/answer'))->body);
+        $this->expectException(HttpException::class);
+        $r->dispatch(new Request('POST', '/quiz/q%201/answer'));
+    }
+
     public function testAnchoredMatch(): void
     {
         $r = new Router();

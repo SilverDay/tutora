@@ -6,6 +6,10 @@ namespace Tutora;
 
 use PDO;
 use Throwable;
+use Tutora\Activity\BlockStates;
+use Tutora\Activity\QuizService;
+use Tutora\Activity\SubmissionService;
+use Tutora\Activity\WallService;
 use Tutora\Audit\AuditLog;
 use Tutora\Auth\HibpPasswordChecker;
 use Tutora\Auth\PasswordHasher;
@@ -115,7 +119,10 @@ final class App
 
         // tutor: workshops & sessions
         $ws = fn (TenantContext $t) => new WorkshopController(new WorkshopRepository($this->tenantDb($t), $this->clock), $this->sessionService($t), new AuditLog($this->pdo(), $this->clock), $this->view);
-        $ss = fn (TenantContext $t) => new SessionController($this->sessionService($t), $this->relayTokens(), $this->view);
+        $ss = fn (TenantContext $t) => new SessionController(
+            $this->sessionService($t), $this->relayTokens(), $this->view, $this->tenantDb($t),
+            $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(),
+        );
         $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->dashboard($q, $t)));
         $r->add('POST', '/workshops', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->create($q, $t)));
         $r->add('GET', '/workshops/{id:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->show($q, $t)));
@@ -130,17 +137,30 @@ final class App
         $r->add('POST', '/sessions/{id:\d+}/navigate', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->navigate($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/end', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->end($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->delete($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/quiz/start', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->quizStart($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/quiz/reveal', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->quizReveal($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/wall/cards', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallAdd($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/wall/cards/{card:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallDelete($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/moderation/remove-actor', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->removeActor($q, $t)));
         $r->add('GET', '/api/tutor/sessions/{id:\d+}/state', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->state($q, $t)));
         $r->add('POST', '/api/tutor/sessions/{id:\d+}/connection-token', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->connectionToken($q, $t)));
 
         // participant (anonymous, bearer credential)
-        $p = fn () => new ParticipantApiController($this->participants());
+        $p = fn () => new ParticipantApiController($this->participants(), $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates());
         $r->add('GET', '/join', fn () => $this->view->render('participant/join', ['title' => 'Join session'], 200, 'participant/layout'));
         $r->add('POST', '/api/participant/join', fn (Request $q) => $p()->join($q));
         $r->add('POST', '/api/participant/resume', fn (Request $q) => $p()->resume($q));
         $r->add('POST', '/api/participant/sessions/{id:\d+}/presence', fn (Request $q) => $p()->presence($q));
         $r->add('GET', '/api/participant/sessions/{id:\d+}/state', fn (Request $q) => $p()->state($q));
         $r->add('POST', '/api/participant/sessions/{id:\d+}/connection-token', fn (Request $q) => $p()->connectionToken($q));
+        $pb = '/api/participant/sessions/{id:\d+}/blocks/{block:\d+}';
+        $r->add('POST', $pb . '/submission', fn (Request $q) => $p()->submit($q));
+        $r->add('POST', $pb . '/wall/cards', fn (Request $q) => $p()->addCard($q));
+        $r->add('POST', $pb . '/wall/cards/{card:\d+}/move', fn (Request $q) => $p()->moveCard($q));
+        $r->add('POST', $pb . '/wall/cards/{card:\d+}/edit', fn (Request $q) => $p()->editCard($q));
+        $r->add('POST', $pb . '/wall/cards/{card:\d+}/delete', fn (Request $q) => $p()->deleteCard($q));
+        $r->add('POST', $pb . '/quiz/{question:[A-Za-z0-9_-]+}/open', fn (Request $q) => $p()->openQuestion($q));
+        $r->add('POST', $pb . '/quiz/{question:[A-Za-z0-9_-]+}/answer', fn (Request $q) => $p()->answer($q));
         $r->add('GET', '/account/password', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->showPassword($q, $t)));
         $r->add('POST', '/account/password', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->changePassword($q, $t)));
     }
@@ -237,6 +257,26 @@ final class App
             $this->relayTokens(),
             new RateLimiter($this->pdo(), $this->clock),
         );
+    }
+
+    private function submissions(): SubmissionService
+    {
+        return new SubmissionService($this->pdo(), $this->clock, $this->broadcaster(), $this->participants());
+    }
+
+    private function wall(): WallService
+    {
+        return new WallService($this->pdo(), $this->clock, $this->broadcaster(), $this->participants());
+    }
+
+    private function quiz(): QuizService
+    {
+        return new QuizService($this->pdo(), $this->clock, $this->broadcaster(), $this->participants());
+    }
+
+    private function blockStates(): BlockStates
+    {
+        return new BlockStates($this->submissions(), $this->wall(), $this->quiz());
     }
 
     private function broadcaster(): Broadcaster
