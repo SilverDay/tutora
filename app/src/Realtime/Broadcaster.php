@@ -11,6 +11,12 @@ namespace Tutora\Realtime;
  */
 interface Broadcaster
 {
-    /** @param array<string,mixed> $message must contain "type" */
-    public function broadcast(int $sessionId, array $message): void;
+    public const TARGET_TUTOR = 'tutor';
+    public const TARGET_PARTICIPANT = 'participant';
+
+    /**
+     * @param array<string,mixed> $message must contain "type"
+     * @param self::TARGET_*|null $targetRole null = everyone in the room
+     */
+    public function broadcast(int $sessionId, array $message, ?string $targetRole = null): void;
 }

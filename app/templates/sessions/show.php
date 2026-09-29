@@ -1,3 +1,4 @@
+<?php if ($session['status'] === 'live'): ?><script type="module" src="/assets/tutor-session.js"></script><?php endif; ?>
 <?php /** @var callable $e @var array<string,mixed> $session @var array<string,mixed> $state @var list<array<string,mixed>> $blocks */ ?>
 <section class="card">
     <h1><?= $e($session['workshop_title_snapshot']) ?></h1>
@@ -6,7 +7,11 @@
     <?php else: ?>
         <p class="muted">This session has ended. Data is kept until <?= $e(substr((string) $session['expires_at'], 0, 10)) ?> (UTC).</p>
     <?php endif; ?>
-    <p class="muted">Revision <?= $e($state['session_revision']) ?> · status <?= $e($state['status']) ?></p>
+    <p class="muted">Revision <?= $e($state['session_revision']) ?> · status <?= $e($state['status']) ?>
+        <?php if ($session['status'] === 'live'): ?>
+            · <span id="presence" data-session-id="<?= $e($session['id']) ?>">connecting…</span>
+        <?php endif; ?>
+    </p>
 </section>
 
 <section class="card">

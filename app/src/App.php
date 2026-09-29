@@ -20,6 +20,7 @@ use Tutora\Controller\WorkshopController;
 use Tutora\Participant\ParticipantService;
 use Tutora\Realtime\Broadcaster;
 use Tutora\Realtime\NullBroadcaster;
+use Tutora\Realtime\RelayBroadcaster;
 use Tutora\Security\HmacToken;
 use Tutora\Session\SessionService;
 use Tutora\Tenant\TenantDb;
@@ -81,6 +82,7 @@ final class App
                 $this->csrf->verify($request);
             }
             $this->view->share('csrf', $this->csrf->token());
+            $this->view->share('realtimeUrl', $this->realtimeUrl());
             $this->view->share('signedIn', false);
             $response = $this->router->dispatch($request);
         } catch (HttpException $e) {
@@ -92,7 +94,7 @@ final class App
             $this->logger->error('Unhandled exception', ['class' => $e::class, 'message' => $e->getMessage(), 'at' => $e->getFile() . ':' . $e->getLine()]);
             $response = $this->error($request, 500, 'Something went wrong.');
         }
-        return SecurityHeaders::apply($response, $this->config->list('REALTIME_ORIGINS'), $this->config->isProduction());
+        return SecurityHeaders::apply($response, [self::originOf($this->realtimeUrl())], $this->config->isProduction());
     }
 
     private function routes(): void
@@ -177,6 +179,30 @@ final class App
         }
     }
 
+    /** Public WebSocket URL of the relay (default: same host, path /ws, proxied by Apache). */
+    private function realtimeUrl(): string
+    {
+        $url = $this->config->string('REALTIME_URL', '');
+        if ($url === '') {
+            $base = $this->config->string('APP_BASE_URL', 'http://localhost');
+            $url = preg_replace('#^http#i', 'ws', rtrim($base, '/')) . '/ws';
+        }
+        return $url;
+    }
+
+    private static function originOf(string $url): string
+    {
+        $p = parse_url($url);
+        return ($p['scheme'] ?? 'wss') . '://' . ($p['host'] ?? '') . (isset($p['port']) ? ':' . $p['port'] : '');
+    }
+
+    /** Test seam. */
+    public function withBroadcaster(Broadcaster $b): self
+    {
+        $this->broadcaster = $b;
+        return $this;
+    }
+
     private function isCsrfExempt(string $path): bool
     {
         foreach (self::CSRF_EXEMPT_PREFIXES as $p) {
@@ -215,8 +241,13 @@ final class App
 
     private function broadcaster(): Broadcaster
     {
-        // replaced by the relay HTTP client in Phase 4
-        return $this->broadcaster ??= new NullBroadcaster();
+        if ($this->broadcaster === null) {
+            $url = $this->config->string('RELAY_INTERNAL_URL', '');
+            $this->broadcaster = $url === ''
+                ? new NullBroadcaster()
+                : new RelayBroadcaster($url, $this->config->string('RELAY_INTERNAL_SECRET'), $this->logger);
+        }
+        return $this->broadcaster;
     }
 
     public function pdo(): PDO

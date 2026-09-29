@@ -92,7 +92,7 @@ final class SessionParticipantTest extends TestCase
         $blocks = $this->sessions->blocks($sid);
         $rev = $this->sessions->goToBlock($sid, (int) $blocks[1]['id']);
         self::assertSame(2, $rev);
-        self::assertSame([$sid, ['type' => 'block_change', 'session_revision' => 2, 'session_block_id' => (int) $blocks[1]['id']]], $this->bc->sent[0]);
+        self::assertSame([$sid, ['type' => 'block_change', 'session_revision' => 2, 'session_block_id' => (int) $blocks[1]['id']], null], $this->bc->sent[0]);
         self::assertNull($this->sessions->step($sid, 1), 'no block after the last');
         self::assertSame(3, $this->sessions->step($sid, -1));
     }

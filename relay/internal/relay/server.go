@@ -15,9 +15,9 @@ import (
 
 const (
 	defaultAuthDeadline = 5 * time.Second
-	pingInterval = 25 * time.Second
-	readTimeout  = 60 * time.Second
-	writeTimeout = 10 * time.Second
+	pingInterval        = 25 * time.Second
+	readTimeout         = 60 * time.Second
+	writeTimeout        = 10 * time.Second
 
 	// application close codes (4000-4999)
 	closeAuthFailed   = 4401
@@ -34,8 +34,8 @@ type Config struct {
 	Limits         Limits
 	// AuthDeadline for the first (auth) message; defaults to 5 s.
 	AuthDeadline time.Duration
-	Now            func() time.Time
-	Logger         *log.Logger
+	Now          func() time.Time
+	Logger       *log.Logger
 }
 
 // Server exposes the public WebSocket endpoint and the private internal API.

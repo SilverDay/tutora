@@ -42,3 +42,18 @@ jobs:
       - name: Lint
         run: find src public bin tests -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: vendor/bin/phpunit
+
+  relay:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: relay/go.mod
+          cache-dependency-path: relay/go.sum
+      - run: go vet ./...
+      - run: test -z "$(gofmt -l .)"
+      - run: go test -race -count=1 ./...

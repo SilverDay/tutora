@@ -1,5 +1,5 @@
 # Development environment (spec: Deployment & Infrastructure).
-# Services for later phases (relay, whiteboard, converter) are added as they are implemented.
+# Services for later phases (whiteboard, converter) are added as they are implemented.
 services:
   app:        # PHP 8.3 + Apache
     build: ./app
@@ -28,6 +28,20 @@ services:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s
       retries: 20
+
+  relay:      # Go WebSocket relay
+    build: ./relay
+    environment:
+      RELAY_PUBLIC_ADDR: 0.0.0.0:8090
+      RELAY_INTERNAL_ADDR: 0.0.0.0:8081   # reachable only on the compose network (not published)
+      RELAY_TOKEN_KEY: ${RELAY_TOKEN_KEY}
+      RELAY_INTERNAL_SECRET: ${RELAY_INTERNAL_SECRET}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS}
+    ports:
+      - "127.0.0.1:8090:8090"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
 
 volumes:
   dbdata:

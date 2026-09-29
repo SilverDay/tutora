@@ -1,13 +1,14 @@
 // Tutora participant client (vanilla ES module, no build step).
 // Output-encoding invariant: all server/user-supplied text is inserted via textContent,
 // never innerHTML.
+import { connectRealtime } from './realtime.js';
 
 const RESUME_KEY = 'tutora.resume';
 const PRESENCE_INTERVAL_MS = 15 * 60 * 1000;
-// Until the realtime relay exists (Phase 4) the client polls the authoritative state endpoint.
+// Fallback polling of the authoritative state endpoint while the relay is unreachable.
 const POLL_INTERVAL_MS = 5000;
 
-const state = { sessionId: null, credential: null, revision: -1, timers: [] };
+const state = { sessionId: null, credential: null, revision: -1, timers: [], rt: null, live: false };
 
 function el(tag, text, className) {
   const node = document.createElement(tag);
@@ -108,6 +109,23 @@ async function renewPresence() {
 function stopTimers() {
   state.timers.forEach(clearInterval);
   state.timers = [];
+  if (state.rt) { state.rt.close(); state.rt = null; }
+}
+
+function onRealtime(msg) {
+  switch (msg.type) {
+    case 'auth_ok':
+      // (re)subscribed: fetch authoritative state to cover anything missed while offline
+      refresh();
+      break;
+    case 'block_change':
+    case 'session_ended':
+      // any revision change or gap -> re-fetch HTTP state (authoritative)
+      if (typeof msg.session_revision !== 'number' || msg.session_revision !== state.revision) refresh();
+      break;
+    default:
+      break;
+  }
 }
 
 function showSession() {
@@ -115,8 +133,18 @@ function showSession() {
   document.getElementById('session-view').hidden = false;
   stopTimers();
   refresh();
-  state.timers.push(setInterval(refresh, POLL_INTERVAL_MS));
+  // fallback polling only while the realtime connection is down
+  state.timers.push(setInterval(() => { if (!state.live) refresh(); }, POLL_INTERVAL_MS));
   state.timers.push(setInterval(renewPresence, PRESENCE_INTERVAL_MS));
+  state.rt = connectRealtime({
+    getToken: async () => {
+      const r = await authed('POST', '/connection-token');
+      return r ? r.token : null;
+    },
+    onMessage: onRealtime,
+    onStatus: (up) => { state.live = up; },
+    isFinal: (code) => code === 4410,
+  });
 }
 
 function showJoin(message) {

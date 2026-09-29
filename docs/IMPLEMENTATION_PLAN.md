@@ -28,6 +28,9 @@ Every deviation is also marked in code comments where it matters.
 | `sessions.expires_at` meaning | Interpreted as **purge-after timestamp** (`ended_at` + tenant retention). | Spec lists the column without defining it; the only expiry-related session concept in the spec is the TTL purge. |
 | Join-code uniqueness among live sessions | `active_join_code` column (= `join_code` while not ended, `NULL` after) with a `UNIQUE` index. | Enforced by the DB rather than by an application check-then-insert race. |
 | `sessions.current_session_block_id` FK | Single-column FK `ON DELETE SET NULL`; same-session check in the repository. | A composite FK forms a delete cycle with `session_blocks` CASCADE (verified). All other session-child tables use composite `(x_id, session_id)` FKs, so cross-session references are structurally impossible. |
+| Navigation path (`block_change`) | **tutor → PHP (DB + `session_revision`) → `/internal/broadcast` → relay → room**; the relay rejects `block_change` sent by clients. | Spec's message table says "tutor → relay → room", but its recovery section makes HTTP authoritative. Navigating on the socket would let DB and relay disagree and lose position on a relay restart. |
+| Relay limits | Per actor: 10 connections, 30 msg/s (burst 60) shared across connections; per room: 2000 connections; 64 KiB per message; 16 KiB per presenter stroke; 5000 buffered strokes per block. Ended sessions refuse reconnects for 5 min (> 60 s token TTL). | Spec requires explicit limits and per-actor (not per-socket) rate limiting; values are proposed defaults. |
+| Tutor presence | Relay sends tutors a `presence` message with the **count** of distinct connected participants only. | Useful for the tutor, reveals no identity. |
 | `config_version` | Column on `workshop_blocks` and `session_blocks` (not inside the JSON). | Queryable, enforces presence via `NOT NULL`. |
 
 ## 3. Repository layout
