@@ -10,6 +10,7 @@ use Tutora\Http\HttpException;
 use Tutora\Http\Request;
 use Tutora\Http\Response;
 use Tutora\Session\SessionService;
+use Tutora\Slides\SlideImportService;
 use Tutora\Support\ValidationException;
 use Tutora\Tenant\TenantContext;
 use Tutora\View\View;
@@ -26,6 +27,7 @@ final class WorkshopController
         private readonly SessionService $sessions,
         private readonly AuditLog $audit,
         private readonly View $view,
+        private readonly SlideImportService $slides,
     ) {
     }
 
@@ -60,6 +62,7 @@ final class WorkshopController
             'workshop' => $workshop,
             'blocks' => $this->workshops->blocks($id),
             'types' => array_map(static fn (BlockType $b) => $b->value, BlockType::cases()),
+            'imports' => $this->slides->imports($id),
             'errors' => $errors,
         ], $status);
     }
@@ -80,6 +83,10 @@ final class WorkshopController
     public function delete(Request $r, TenantContext $t): Response
     {
         $id = $r->intParam('id');
+        if ($this->workshops->find($id) === null) {
+            throw new HttpException(404, 'Not found');
+        }
+        $this->slides->deleteWorkshopFiles($id);
         if (!$this->workshops->delete($id)) {
             throw new HttpException(404, 'Not found');
         }

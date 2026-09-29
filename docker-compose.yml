@@ -1,5 +1,5 @@
 # Development environment (spec: Deployment & Infrastructure).
-# Services for later phases (whiteboard, converter) are added as they are implemented.
+# The whiteboard service is added in Phase 7.
 services:
   app:        # PHP 8.3 + Apache
     build: ./app
@@ -42,6 +42,15 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+
+  converter:  # LibreOffice + poppler-utils image; the daemon starts ONE container per job
+    build: ./converter
+    image: tutora-converter:latest
+    network_mode: none
+    profiles: ["build-only"]   # built by `docker compose build converter`, never started as a service
+    # per-job runtime profile (network none, non-root, cap_drop ALL, no-new-privileges,
+    # read-only rootfs, job mounts, pids/memory/CPU limits, external timeout) is applied by
+    # app/src/Slides/DockerConverterRunner.php when the daemon runs a job
 
 volumes:
   dbdata:

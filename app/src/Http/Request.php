@@ -28,6 +28,8 @@ final class Request
         public readonly array $cookies = [],
         public readonly string $body = '',
         public readonly string $clientIp = '0.0.0.0',
+        /** @var array<string,UploadedFile> */
+        public readonly array $files = [],
     ) {
     }
 
@@ -47,6 +49,16 @@ final class Request
         if (strlen($body) > $maxBodyBytes) {
             throw new HttpException(413, 'Request body too large');
         }
+        $files = [];
+        foreach ($_FILES as $field => $f) {
+            // single-file fields only; is_uploaded_file() guards against spoofed temp paths
+            if (is_string($field) && is_array($f) && is_string($f['tmp_name'] ?? null) && is_int($f['error'] ?? null)) {
+                $genuine = $f['error'] !== UPLOAD_ERR_OK || is_uploaded_file($f['tmp_name']);
+                if ($genuine) {
+                    $files[$field] = new UploadedFile($f['tmp_name'], (string) ($f['name'] ?? ''), $f['error']);
+                }
+            }
+        }
         return new self(
             strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')),
             is_string($path) && $path !== '' ? $path : '/',
@@ -56,6 +68,7 @@ final class Request
             array_map('strval', array_filter($_COOKIE, 'is_string')),
             $body,
             (string) ($_SERVER['REMOTE_ADDR'] ?? '0.0.0.0'),
+            $files,
         );
     }
 

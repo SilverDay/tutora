@@ -102,11 +102,20 @@ final class SlideImportService
         ));
     }
 
-    /** Removes the converted files of every import of a workshop (before the workshop is deleted). */
+    /**
+     * Removes the converted files of every import of a workshop and any still-staged
+     * uploads (called before the workshop is deleted; DB rows cascade).
+     */
     public function deleteWorkshopFiles(int $workshopId): void
     {
         foreach ($this->db->all('SELECT id FROM slide_imports WHERE workshop_id = :wid AND tenant_id = :tenant_id', ['wid' => $workshopId]) as $r) {
             $this->storage->deleteImport($this->db->tenantId(), (int) $r['id']);
+        }
+        $staging = $this->storage->stagingDir() . '/';
+        foreach ($this->db->all('SELECT source_path FROM conversion_jobs WHERE workshop_id = :wid AND tenant_id = :tenant_id', ['wid' => $workshopId]) as $r) {
+            if (str_starts_with((string) $r['source_path'], $staging)) {
+                @unlink((string) $r['source_path']);
+            }
         }
     }
 }

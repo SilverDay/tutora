@@ -57,3 +57,22 @@ jobs:
       - run: go vet ./...
       - run: test -z "$(gofmt -l .)"
       - run: go test -race -count=1 ./...
+
+  converter:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build converter image
+        run: docker build -t tutora-converter:ci converter
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql, sodium, mbstring, curl
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+        working-directory: app
+      - name: Sandboxed conversion tests (real container)
+        working-directory: app
+        env:
+          TUTORA_TEST_CONVERTER_IMAGE: tutora-converter:ci
+        run: vendor/bin/phpunit --filter DockerConverterRunnerTest --fail-on-skipped

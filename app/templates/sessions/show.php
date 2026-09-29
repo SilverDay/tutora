@@ -19,6 +19,11 @@
 <?php if ($current !== null): ?>
 <section class="card">
     <h2>Current: <?= $e($current['type']) ?></h2>
+    <?php if ($current['slide_asset_id'] !== null): ?>
+        <img class="slide" src="/slides/<?= $e($current['slide_asset_id']) ?>" alt="Current slide">
+    <?php elseif ($current['type'] === 'slide'): ?>
+        <p class="muted">This slide image is no longer available.</p>
+    <?php endif; ?>
     <p><?= $e($current['config']['prompt'] ?? $current['config']['question'] ?? '') ?></p>
 
     <?php if ($current['type'] === 'quiz' && $session['status'] === 'live'): ?>

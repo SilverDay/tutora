@@ -1,5 +1,10 @@
 # End-to-end browser tests
 
+`slides.e2e.mjs` uploads a real PPTX in the browser and follows it through the conversion
+daemon (sandboxed container), thumbnails, slide blocks and a live session until the
+participant sees the rendered slide. It needs `bin/conversion-daemon.php` running with a
+built `CONVERTER_IMAGE`.
+
 `activities.e2e.mjs` drives the real UI in Chromium against a running stack: tutor signup
 with TOTP, workshop authoring, a live session with two participants, every activity type,
 both quiz modes, live updates over the relay, Write privacy, wall moderation, and it fails

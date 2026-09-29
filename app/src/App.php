@@ -20,6 +20,9 @@ use Tutora\Auth\TutorAuthService;
 use Tutora\Controller\AuthController;
 use Tutora\Controller\ParticipantApiController;
 use Tutora\Controller\SessionController;
+use Tutora\Controller\SlideController;
+use Tutora\Slides\SlideImportService;
+use Tutora\Slides\SlideStorage;
 use Tutora\Controller\WorkshopController;
 use Tutora\Participant\ParticipantService;
 use Tutora\Realtime\Broadcaster;
@@ -118,7 +121,8 @@ final class App
         $r->add('POST', '/logout', fn (Request $q) => $auth()->logout($q));
 
         // tutor: workshops & sessions
-        $ws = fn (TenantContext $t) => new WorkshopController(new WorkshopRepository($this->tenantDb($t), $this->clock), $this->sessionService($t), new AuditLog($this->pdo(), $this->clock), $this->view);
+        $ws = fn (TenantContext $t) => new WorkshopController(new WorkshopRepository($this->tenantDb($t), $this->clock), $this->sessionService($t), new AuditLog($this->pdo(), $this->clock), $this->view, $this->slideImports($t));
+        $sl = fn () => new SlideController($this->storage());
         $ss = fn (TenantContext $t) => new SessionController(
             $this->sessionService($t), $this->relayTokens(), $this->view, $this->tenantDb($t),
             $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(),
@@ -129,6 +133,13 @@ final class App
         $r->add('POST', '/workshops/{id:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->update($q, $t)));
         $r->add('POST', '/workshops/{id:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->delete($q, $t)));
         $r->add('POST', '/workshops/{id:\d+}/blocks', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->addBlock($q, $t)));
+        $r->add('POST', '/workshops/{id:\d+}/slides', $this->tutor(fn (Request $q, TenantContext $t) => $sl()->upload(
+            $q, $this->slideImports($t), fn (array $errors) => $ws($t)->show($q, $t, $errors, 422),
+        )));
+        $r->add('POST', '/workshops/{id:\d+}/slides/{import:\d+}/add-all', $this->tutor(fn (Request $q, TenantContext $t) => $sl()->addAll(
+            $q, $this->slideImports($t), new WorkshopRepository($this->tenantDb($t), $this->clock),
+        )));
+        $r->add('GET', '/slides/{asset:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $sl()->tutorImage($q, $t, $this->tenantDb($t))));
         $r->add('POST', '/workshops/{id:\d+}/sessions', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->startSession($q, $t)));
         $r->add('POST', '/blocks/{block:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->updateBlock($q, $t)));
         $r->add('POST', '/blocks/{block:\d+}/move', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->moveBlock($q, $t)));
@@ -153,6 +164,7 @@ final class App
         $r->add('POST', '/api/participant/sessions/{id:\d+}/presence', fn (Request $q) => $p()->presence($q));
         $r->add('GET', '/api/participant/sessions/{id:\d+}/state', fn (Request $q) => $p()->state($q));
         $r->add('POST', '/api/participant/sessions/{id:\d+}/connection-token', fn (Request $q) => $p()->connectionToken($q));
+        $r->add('GET', '/api/participant/sessions/{id:\d+}/slides/{asset:\d+}', fn (Request $q) => $sl()->participantImage($q, $this->participants(), $this->pdo()));
         $pb = '/api/participant/sessions/{id:\d+}/blocks/{block:\d+}';
         $r->add('POST', $pb . '/submission', fn (Request $q) => $p()->submit($q));
         $r->add('POST', $pb . '/wall/cards', fn (Request $q) => $p()->addCard($q));
@@ -257,6 +269,17 @@ final class App
             $this->relayTokens(),
             new RateLimiter($this->pdo(), $this->clock),
         );
+    }
+
+    private function storage(): SlideStorage
+    {
+        return new SlideStorage($this->config->string('STORAGE_PATH'));
+    }
+
+    private function slideImports(TenantContext $t): SlideImportService
+    {
+        return new SlideImportService($this->tenantDb($t), $this->storage(), new RateLimiter($this->pdo(), $this->clock), $this->clock,
+            $this->config->int('UPLOAD_MAX_BYTES', 50 * 1048576));
     }
 
     private function submissions(): SubmissionService

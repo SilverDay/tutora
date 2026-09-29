@@ -64,3 +64,11 @@ button.danger { background: #b42318; }
 .timer { font-weight: 700; font-variant-numeric: tabular-nums; }
 .quiz-q, .quiz-result { border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; margin: 8px 0; }
 ol.rank li { margin: 6px 0; }
+.slide { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; margin: 12px 0; background: #fff; }
+.thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 8px; }
+.thumbs figure { margin: 0; }
+.thumbs img { width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.thumbs figcaption { font-size: .85em; color: var(--muted); }
+.thumb-inline { height: 48px; width: auto; vertical-align: middle; border: 1px solid var(--border); border-radius: 3px; margin-left: 8px; background: #fff; }
+.import { border-top: 1px solid var(--border); padding-top: 8px; margin-top: 12px; }
+input[type=file] { display: block; margin-top: 4px; }

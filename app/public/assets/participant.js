@@ -12,7 +12,7 @@ const POLL_INTERVAL_MS = 5000;
 
 const state = {
   sessionId: null, credential: null, revision: -1, timers: [], rt: null, live: false,
-  block: null, quizSig: null, countdown: null,
+  block: null, quizSig: null, countdown: null, slideUrl: null,
 };
 
 // ------------------------------------------------------------------ API
@@ -347,6 +347,20 @@ function updateDynamic(block) {
   }
 }
 
+/** Loads a slide image with the participant credential (img tags cannot send headers). */
+async function slideImage(assetId) {
+  const r = await fetch(`/api/participant/sessions/${encodeURIComponent(state.sessionId)}/slides/${encodeURIComponent(assetId)}`, {
+    headers: { 'Authorization': 'Bearer ' + state.credential }, credentials: 'omit', cache: 'no-store',
+  });
+  if (!r.ok) return el('p', { class: 'muted', text: 'Slide not available.' });
+  const blob = await r.blob();
+  if (blob.type !== 'image/png') return el('p', { class: 'muted', text: 'Slide not available.' });
+  const url = URL.createObjectURL(blob);
+  if (state.slideUrl) URL.revokeObjectURL(state.slideUrl);
+  state.slideUrl = url;
+  return el('img', { class: 'slide', src: url, alt: 'Slide' });
+}
+
 function renderBlock(block) {
   const root = document.getElementById('block');
   root.replaceChildren();
@@ -356,10 +370,15 @@ function renderBlock(block) {
   state.block = block;
   if (!block) { root.append(el('p', { class: 'muted', text: 'Waiting for the tutor…' })); return; }
   const c = block.config || {};
+  if (block.slide_asset_id) {
+    const holder = el('div', { class: 'slide-holder' });
+    root.append(holder);
+    slideImage(block.slide_asset_id).then((node) => { if (state.block === block) holder.replaceChildren(node); });
+  }
   const make = controls[block.type];
   root.append(
     make ? make(c, block.state?.mine ?? null)
-      : el('p', { class: 'muted', text: block.type === 'quiz' ? '' : 'Follow along with your tutor.' }),
+      : el('p', { class: 'muted', text: ['quiz', 'slide'].includes(block.type) ? '' : 'Follow along with your tutor.' }),
     el('div', { id: 'dynamic' }),
     el('div', { id: 'results', class: 'results' }),
   );

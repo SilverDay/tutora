@@ -1,0 +1,32 @@
+# Tutora slide conversion daemon.
+# The service user needs access to the container runtime (docker group, or rootless
+# docker/podman for that user) and read/write access to STORAGE_PATH; nothing else.
+[Unit]
+Description=Tutora slide conversion daemon
+After=network-online.target docker.service mariadb.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=tutora-converter
+Group=tutora-converter
+SupplementaryGroups=docker
+WorkingDirectory=/var/www/tutora/app
+ExecStart=/usr/bin/php8.3 bin/conversion-daemon.php
+Restart=always
+RestartSec=2
+# hardening of the daemon itself
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/tutora
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

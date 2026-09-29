@@ -38,6 +38,7 @@ final class HttpHarness
             'RELAY_TOKEN_KEY' => str_repeat('11', 32),
             'PARTICIPANT_CREDENTIAL_KEY' => str_repeat('22', 32),
             'RETENTION_DAYS_DEFAULT' => '30',
+            'STORAGE_PATH' => sys_get_temp_dir() . '/tutora-http-test-storage',
         ]);
         $this->app = (new App($config, $this->session, $clock, $pdo))->withAuthService(new TutorAuthService(
             new TutorAccounts($pdo, $clock),
