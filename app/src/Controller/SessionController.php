@@ -22,6 +22,9 @@ use Tutora\Tenant\TenantDb;
 use Tutora\Whiteboard\SnapshotService;
 use Tutora\Whiteboard\WhiteboardModeration;
 use Tutora\Whiteboard\WhiteboardService;
+use Tutora\Ai\AiLimitReached;
+use Tutora\Ai\AiUnavailable;
+use Tutora\Ai\SummaryService;
 use Tutora\Slides\SlideImportService;
 use Tutora\View\View;
 
@@ -41,6 +44,7 @@ final class SessionController
         private readonly WhiteboardModeration $whiteboardModeration,
         private readonly SnapshotService $snapshots,
         private readonly SlideImportService $slides,
+        private readonly SummaryService $summaries,
     ) {
     }
 
@@ -62,6 +66,28 @@ final class SessionController
             $this->whiteboardModeration->clear($id, $block);
             return true;
         });
+    }
+
+    /** Tutor-triggered AI summary of a Write block (spec: AI (Write) Integration). */
+    public function generateSummary(Request $r, TenantContext $t): Response
+    {
+        $id = $r->intParam('id');
+        return $this->act($id, function () use ($r, $id): bool {
+            try {
+                return $this->summaries->generate($this->tenantDb, $id, self::intInput($r, 'block'), $r->clientIp);
+            } catch (AiLimitReached $e) {
+                throw new ActionFailed($e->getMessage() === 'quota' ? 'ai_quota' : 'ai_session_cap');
+            } catch (AiUnavailable $e) {
+                throw new ActionFailed($e->getMessage() === 'disabled' ? 'ai_disabled' : 'ai_failed');
+            }
+        });
+    }
+
+    /** Shares the generated summary with the participants (explicit tutor action). */
+    public function shareSummary(Request $r, TenantContext $t): Response
+    {
+        $id = $r->intParam('id');
+        return $this->act($id, fn (): bool => $this->summaries->share($this->tenantDb, $id, self::intInput($r, 'block')));
     }
 
     /** Shows a block's hidden results to participants (owner decision 11). */
@@ -152,6 +178,10 @@ final class SessionController
     private const ERRORS = [
         'not_open' => 'That action is not possible for the current block.',
         'invalid' => 'The request was not valid.',
+        'ai_disabled' => 'AI summaries are not enabled on this server.',
+        'ai_failed' => 'The summary could not be generated. Please try again later.',
+        'ai_quota' => 'The AI quota for this month is used up.',
+        'ai_session_cap' => 'The daily limit of AI summaries for this session is reached.',
         'quiz_open' => 'Reveal the open question before starting another, and each question can only be run once.',
     ];
 

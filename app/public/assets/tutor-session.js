@@ -60,6 +60,24 @@ function render(block) {
   if (s.aggregate !== undefined) renderAggregate(agg, block.type, block.config, s.aggregate);
   results.append(agg);
 
+  if (block.type === 'write' && s.ai) {
+    // AI output is untrusted display-only text: rendered with textContent, never as HTML
+    const box = el('div', { class: 'ai-summary', 'data-testid': 'ai-summary' });
+    if (s.ai.summary !== null) {
+      box.append(
+        el('h3', { text: 'AI summary (check it against the responses below)' }),
+        el('p', { class: 'summary-text', text: s.ai.summary }),
+        el('p', { class: 'muted', text: `Based on ${s.ai.responses_used} of ${s.ai.responses_total} responses.` }),
+        s.ai.shared
+          ? el('p', { class: 'muted', 'data-testid': 'summary-shared', text: 'Shared with participants.' })
+          : postForm(`/sessions/${encodeURIComponent(sessionId)}/ai/summary/share`, { block: String(block.id) }, 'Share summary with participants'));
+    }
+    if (s.ai.enabled && (s.responses?.length ?? 0) > 0) {
+      box.append(postForm(`/sessions/${encodeURIComponent(sessionId)}/ai/summary`, { block: String(block.id) },
+        s.ai.summary === null ? 'Generate AI summary' : 'Regenerate AI summary', 'secondary'));
+    }
+    results.append(box);
+  }
   if (block.type === 'write' && s.responses) {
     results.append(el('h3', { text: 'Responses (visible to you only)' }),
       el('ul', { class: 'responses' }, s.responses.map(r => el('li', {},
@@ -124,7 +142,7 @@ if (sessionId) {
         presence.textContent = `${msg.participants} participant${msg.participants === 1 ? '' : 's'} connected`;
       } else if (msg.type === 'session_ended' && presence) {
         presence.textContent = 'session ended';
-      } else if (['activity_aggregate_update', 'wall_update', 'quiz_question_start', 'quiz_question_reveal', 'block_change'].includes(msg.type)) {
+      } else if (['activity_aggregate_update', 'wall_update', 'write_summary_shared', 'quiz_question_start', 'quiz_question_reveal', 'block_change'].includes(msg.type)) {
         refresh();
       }
     },

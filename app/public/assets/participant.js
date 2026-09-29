@@ -344,6 +344,13 @@ function updateDynamic(block) {
     renderAggregate(document.getElementById('results'), block.type, block.config, s.aggregate);
   }
   if (block.type === 'wall') renderWall(block.config, s.cards);
+  if (block.type === 'write') {
+    // AI summary the tutor shared; plain text only (textContent), never HTML
+    const box = document.getElementById('summary');
+    if (box) {
+      box.replaceChildren(...(s.summary ? [el('h3', { text: 'Summary' }), el('p', { class: 'summary-text', 'data-testid': 'shared-summary', text: s.summary })] : []));
+    }
+  }
   if (block.type === 'quiz') {
     const sig = JSON.stringify(s.quiz, (k, v) => (k === 'server_time' ? undefined : v));
     if (sig !== state.quizSig) { state.quizSig = sig; renderQuiz(block.config, s.quiz); }
@@ -426,6 +433,7 @@ function renderBlock(block) {
       : el('p', { class: 'muted', text: ['quiz', 'slide', 'whiteboard', 'annotate'].includes(block.type) ? (c.prompt ?? '') : 'Follow along with your tutor.' }),
     el('div', { id: 'dynamic' }),
     el('div', { id: 'results', class: 'results' }),
+    el('div', { id: 'summary' }),
   );
   updateDynamic(block);
 }
@@ -494,6 +502,7 @@ function onRealtime(msg) {
       }
       break;
     case 'wall_update':
+    case 'write_summary_shared':
     case 'quiz_question_start':
     case 'quiz_question_reveal':
       if (state.block && msg.session_block_id === state.block.id) refresh();

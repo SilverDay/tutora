@@ -286,6 +286,8 @@ var InternalBroadcastTypes = map[string]bool{
 	"wall_update":               true,
 	"capture":                   true,
 	"session_ended":             true,
+	// carries only the block id; clients re-fetch the shared summary over HTTP
+	"write_summary_shared": true,
 }
 
 // BroadcastInternal fans out a PHP-originated message and updates the mirrored state.

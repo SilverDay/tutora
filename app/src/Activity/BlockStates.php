@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tutora\Activity;
 
+use Tutora\Ai\SummaryService;
 use Tutora\Block\BlockType;
 use Tutora\Participant\ParticipantContext;
 use Tutora\Tenant\TenantDb;
@@ -18,13 +19,14 @@ final class BlockStates
         private readonly SubmissionService $submissions,
         private readonly WallService $wall,
         private readonly QuizService $quiz,
+        private readonly SummaryService $summaries,
     ) {
     }
 
     /** @return array<string,mixed>|null */
     public function forParticipant(ParticipantContext $p, int $blockId, BlockType $type): ?array
     {
-        return match (true) {
+        $state = match (true) {
             $type->usesGenericSubmissions() => $this->submissions->resultsHidden($p->sessionId, $blockId)
                 ? ['aggregate' => null, 'results_hidden' => true, 'mine' => $this->submissions->mine($p, $blockId)]
                 : ['aggregate' => $this->submissions->aggregate($p->sessionId, $blockId), 'results_hidden' => false, 'mine' => $this->submissions->mine($p, $blockId)],
@@ -32,6 +34,11 @@ final class BlockStates
             $type === BlockType::Quiz => ['quiz' => $this->quiz->participantView($p, $blockId)],
             default => null,
         };
+        if ($type === BlockType::Write && $state !== null) {
+            // only a summary the tutor explicitly shared (spec: raw responses stay with the tutor)
+            $state['summary'] = $this->summaries->forParticipant($p->sessionId, $blockId);
+        }
+        return $state;
     }
 
     /** @return array<string,mixed>|null */
@@ -42,6 +49,7 @@ final class BlockStates
                 'aggregate' => $this->submissions->aggregate($sessionId, $blockId),
                 'responses' => $this->submissions->writeResponses($tenant, $sessionId, $blockId),
                 'results_hidden' => $this->submissions->resultsHidden($sessionId, $blockId),
+                'ai' => $this->summaries->forTutor($sessionId, $blockId),
             ],
             $type->usesGenericSubmissions() => [
                 'aggregate' => $this->submissions->aggregate($sessionId, $blockId),

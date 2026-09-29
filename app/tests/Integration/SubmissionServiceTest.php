@@ -155,7 +155,8 @@ final class SubmissionServiceTest extends TestCase
             [BlockType::Poll, ['question' => 'Live?', 'options' => ['Yes', 'No']]],
         ]);
         $svc = new SubmissionService($pdo, $clock, $bc, $live->participants);
-        $states = new BlockStates($svc, new WallService($pdo, $clock, $bc, $live->participants), new QuizService($pdo, $clock, $bc, $live->participants));
+        $states = new BlockStates($svc, new WallService($pdo, $clock, $bc, $live->participants), new QuizService($pdo, $clock, $bc, $live->participants),
+            new \Tutora\Ai\SummaryService($pdo, $clock, null, $svc, $bc, new \Tutora\Audit\AuditLog($pdo, $clock), new \Tutora\Security\Logger(static fn () => null)));
         [$hidden, $visible] = $live->blocks;
         $a = $live->join();
 

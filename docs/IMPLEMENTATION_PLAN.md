@@ -130,9 +130,21 @@ Each phase ends with passing tests and is committed separately.
 - Client-side snapshot capture → `whiteboard_snapshots`.
 - Moderation: clear board, remove actor's entities. Annotate mode.
 
-### Phase 8 — AI (Write) summaries
-- Provider interface `generateSummary(text[]) → string`, delimited prompt, output escaped.
-- `ai_usage`, `ai_quota`, separate hard per-session/per-day call cap.
+### Phase 8 — AI (Write) summaries ✅
+- Provider interface `SummaryProvider::generateSummary(SummaryPrompt) → AiSummary` (text + token counts —
+  deviation from `→ string` because the spec's `ai_usage`/`ai_quota` need the counts). Only an offline
+  `StubSummaryProvider` exists; `AI_PROVIDER` is empty (disabled) until a provider with a DPA and an EU
+  endpoint or SCCs is chosen (owner decision 6); `stub` is refused in production.
+- Tutor-triggered only. Prompt: instructions in the system part; question and each response wrapped in markers
+  carrying a random per-request nonce, marker-like text and the nonce stripped from content.
+- Output: control/bidi characters removed, length-capped, stored as plain text, rendered only via
+  `textContent`/`$e()`. The tutor always sees the raw responses next to the summary. Participants see a summary
+  only after an explicit "Share" (a regenerated summary must be shared again); the relay message
+  `write_summary_shared` carries only the block id.
+- Limits, independent: tenant quota per UTC calendar month in `ai_quota` (calls and tokens) and a hard
+  per-session per-UTC-day call cap from `ai_usage`; both checked and the call reserved under the tenant's
+  `ai_quota` row lock (no overshoot under concurrency); failed provider calls count. `AI_MAX_INPUT_CHARS`
+  bounds the text sent. Audit `ai.summary.generated` with counts only; no prompts/responses/summaries in logs.
 
 ### Phase 9 — Exports, retention, ops
 - Session export (union of `block_submissions` and `quiz_answers`) with CSV formula-injection protection.

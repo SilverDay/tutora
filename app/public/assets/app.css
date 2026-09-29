@@ -80,3 +80,5 @@ input[type=file] { display: block; margin-top: 4px; }
 .wb-status { display: block; margin-top: 4px; }
 .totp-qr { display: block; width: 205px; max-width: 100%; height: auto; image-rendering: pixelated; margin: .5rem 0 1rem; background: #fff; }
 .totp-qr[hidden] { display: none; }
+.summary-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.ai-summary { border-left: 3px solid var(--muted, #888); padding-left: 12px; margin: 1rem 0; }

@@ -19,6 +19,9 @@ use Tutora\Auth\SignupVerification;
 use Tutora\Auth\AccountNotices;
 use Tutora\Auth\AdminMfaReset;
 use Tutora\Auth\RecoveryCodes;
+use Tutora\Ai\StubSummaryProvider;
+use Tutora\Ai\SummaryProvider;
+use Tutora\Ai\SummaryService;
 use Tutora\Auth\TutorRealtimeRevoker;
 use Tutora\Mail\FileMailer;
 use Tutora\Mail\Mailer;
@@ -144,7 +147,7 @@ final class App
             $this->sessionService($t), $this->relayTokens(), $this->view, $this->tenantDb($t),
             $this->submissions(), $this->wall(), $this->quiz(), $this->blockStates(),
             $this->whiteboardService(), $this->whiteboardModeration(), $this->snapshots($t),
-            $this->slideImports($t),
+            $this->slideImports($t), $this->summaries(),
         );
         $r->add('GET', '/dashboard', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->dashboard($q, $t)));
         $r->add('POST', '/workshops', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->create($q, $t)));
@@ -172,6 +175,8 @@ final class App
         $r->add('POST', '/sessions/{id:\d+}/wall/cards', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallAdd($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/wall/cards/{card:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallDelete($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/moderation/remove-actor', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->removeActor($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/ai/summary', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->generateSummary($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/ai/summary/share', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->shareSummary($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/results/reveal', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->revealResults($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/whiteboard/clear', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->clearBoard($q, $t)));
         $r->add('GET', '/snapshots/{snapshot:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->snapshotImage($q, $t)));
@@ -365,7 +370,32 @@ final class App
 
     private function blockStates(): BlockStates
     {
-        return new BlockStates($this->submissions(), $this->wall(), $this->quiz());
+        return new BlockStates($this->submissions(), $this->wall(), $this->quiz(), $this->summaries());
+    }
+
+    private function summaries(): SummaryService
+    {
+        return new SummaryService(
+            $this->pdo(), $this->clock, $this->summaryProvider(), $this->submissions(), $this->broadcaster(),
+            new AuditLog($this->pdo(), $this->clock), $this->logger,
+            $this->config->int('AI_QUOTA_CALLS_PER_MONTH', 200),
+            $this->config->int('AI_QUOTA_TOKENS_PER_MONTH', 500000),
+            $this->config->int('AI_CALLS_PER_SESSION_PER_DAY', 10),
+            $this->config->int('AI_MAX_INPUT_CHARS', 60000),
+        );
+    }
+
+    /** AI stays disabled until a provider with a DPA is configured (owner decision 6). */
+    private function summaryProvider(): ?SummaryProvider
+    {
+        $provider = $this->config->string('AI_PROVIDER', '');
+        return match ($provider) {
+            '' => null,
+            'stub' => $this->config->isProduction()
+                ? throw new \RuntimeException('AI_PROVIDER=stub is for development only')
+                : new StubSummaryProvider(),
+            default => throw new \RuntimeException('Unknown AI_PROVIDER'),
+        };
     }
 
     private function broadcaster(): Broadcaster

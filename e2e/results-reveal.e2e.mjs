@@ -47,11 +47,11 @@ step('no count in participant pages or WebSocket frames before reveal (still hid
 
 await tutor.click('[data-testid=results-hidden] button');
 await tutor.waitForSelector('[data-testid=results-revealed]');
-for (const p of [p1, p2]) await p.waitForFunction(() => document.getElementById('results').textContent.includes('1 response'), null, { timeout: 5000 });
+for (const p of [p1, p2]) await p.waitForFunction(() => document.getElementById('results')?.textContent.includes('1 response'), null, { timeout: 5000 });
 // proves the frame capture above would have seen a leak
 if (!frames.p1.some((f) => f.includes('activity_aggregate_update'))) throw new Error('frame capture saw no aggregate update after reveal');
 step('tutor reveals: both participants see the result live (update arrived over the relay)');
-await p2.reload(); await p2.waitForFunction(() => document.getElementById('results').textContent.includes('1 response'), null, { timeout: 5000 });
+await p2.reload(); await p2.waitForFunction(() => document.getElementById('results')?.textContent.includes('1 response'), null, { timeout: 5000 });
 step('still visible after reload');
 
 console.log('problems:', JSON.stringify(problems));

@@ -14,6 +14,9 @@ whiteboard sidecar running.
 and checks that the other is signed out and that the relay closed its open connection (takes ~1 min: it
 waits for fresh TOTP steps because codes are single-use).
 
+`ai-summary.e2e.mjs` (server with `AI_PROVIDER=stub`) generates a Write summary as tutor, checks it is not
+visible before sharing and arrives live after sharing, and that no raw responses or markup reach participants.
+
 `results-reveal.e2e.mjs` checks the per-block "hide results until I reveal them" switch: no count in
 participant pages or in the WebSocket frames they receive until the tutor reveals, then live.
 
