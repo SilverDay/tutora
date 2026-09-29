@@ -43,6 +43,44 @@ jobs:
         run: find src public bin tests -name '*.php' -print0 | xargs -0 -n1 php -l
       - run: vendor/bin/phpunit
 
+  backup:
+    # deploy/backup: backup + mandatory restore test (plain and GPG), with the grants from
+    # deploy/README.md, run with the MariaDB client tools of the server's own image
+    runs-on: ubuntu-24.04
+    services:
+      mariadb:
+        image: mariadb:10.11
+        env:
+          MARIADB_DATABASE: tutora
+          MARIADB_USER: tutora
+          MARIADB_PASSWORD: tutora_dev
+          # ephemeral CI container only
+          MARIADB_ROOT_PASSWORD: ci_root_only
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql, sodium, mbstring
+          coverage: none
+      - run: composer install --no-interaction --no-progress
+        working-directory: app
+      - name: Create the schema
+        working-directory: app
+        env: { DB_HOST: 127.0.0.1, DB_NAME: tutora, DB_USER: tutora, DB_PASSWORD: tutora_dev }
+        run: php bin/migrate.php
+      - name: Backup and restore test
+        run: |
+          mkdir -p "$RUNNER_TEMP/storage/slides" && echo test > "$RUNNER_TEMP/storage/slides/x.png"
+          docker run --rm --network host -v "$PWD/deploy:/deploy:ro" -v "$RUNNER_TEMP/storage:/storage:ro" \
+            -e DB_HOST=127.0.0.1 -e DB_ADMIN_USER=root -e DB_ADMIN_PASSWORD=ci_root_only \
+            -e DB_NAME=tutora -e STORAGE_PATH=/storage mariadb:10.11 bash -c \
+            'rm -f /etc/apt/sources.list.d/mariadb* && apt-get update -qq && apt-get install -y -qq gpg-agent > /dev/null && bash /deploy/backup/ci-backup-test.sh'
+
   relay:
     runs-on: ubuntu-24.04
     defaults:

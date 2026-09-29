@@ -25,9 +25,15 @@ final class TenantContext
         return new self($tenantId);
     }
 
-    /** For CLI jobs that legitimately iterate tenants (purge, conversion daemon). */
+    /**
+     * For CLI jobs that legitimately iterate tenants (purge, conversion daemon). Refused in
+     * web requests: there a TenantContext only ever comes from authentication.
+     */
     public static function forSystemJob(int $tenantId): self
     {
+        if (PHP_SAPI !== 'cli') {
+            throw new \LogicException('TenantContext::forSystemJob is for CLI jobs only');
+        }
         return self::forAuthenticatedTutor($tenantId);
     }
 }

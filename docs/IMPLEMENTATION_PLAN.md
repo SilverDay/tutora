@@ -146,10 +146,20 @@ Each phase ends with passing tests and is committed separately.
   `ai_quota` row lock (no overshoot under concurrency); failed provider calls count. `AI_MAX_INPUT_CHARS`
   bounds the text sent. Audit `ai.summary.generated` with counts only; no prompts/responses/summaries in logs.
 
-### Phase 9 — Exports, retention, ops
-- Session export (union of `block_submissions` and `quiz_answers`) with CSV formula-injection protection.
-- Retention purge job (30 d default, per tenant).
-- Apache vhost (WS reverse proxy to 127.0.0.1), systemd units, backup + **restore test** script.
+### Phase 9 — Exports, retention, ops ✅
+- Session export (union of `block_submissions`, `quiz_answers` and wall cards; participants as per-session
+  pseudonyms P1…Pn, never display names) with CSV formula-injection protection; POST + CSRF, audited.
+- Retention purge job `bin/purge.php` (daily timer): expired ended sessions (rows cascade, snapshot files,
+  whiteboard documents via the sidecar, slide images no session uses), expired pending signups, stale
+  rate-limit rows; each session deletion audited with reason `retention`. `TenantContext::forSystemJob` is
+  CLI-only.
+- Apache vhost (`/ws` → relay, `/wb` → sidecar, both loopback), systemd units (relay, sidecar, converter with a
+  rootless runtime — owner decision 7, purge + backup timers), `deploy/README.md`.
+- Backup + **restore test** (`deploy/backup`, owner decision 5: 14 days): dump without `USE`, restore only into a
+  scratch DB, table-set and `CHECK TABLE` verification, optional streamed GPG encryption; exercised in CI
+  (`backup` job) with the documented grants. Retention statement for the privacy policy in `deploy/README.md`.
+- Not verified here: the rootless runtime setup (no rootless tooling in the dev environment) and the systemd
+  units beyond `systemd-analyze verify`.
 
 ## 5. FK deletion rules
 

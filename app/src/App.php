@@ -438,6 +438,18 @@ final class App
         return new TutorRealtimeRevoker($this->pdo(), $this->broadcaster(), $this->whiteboardModeration());
     }
 
+    /** For bin/purge.php. */
+    public static function retentionPurger(Config $config): \Tutora\Retention\RetentionPurger
+    {
+        $app = new self($config, new \Tutora\Auth\ArraySessionStore());
+        return new \Tutora\Retention\RetentionPurger(
+            $app->pdo(),
+            $app->clock,
+            fn (TenantContext $t): array => [$app->sessionService($t), $app->snapshots($t), $app->slideImports($t)],
+            $app->logger,
+        );
+    }
+
     /** For bin/admin-reset-mfa.php. */
     public static function adminMfaReset(Config $config): AdminMfaReset
     {

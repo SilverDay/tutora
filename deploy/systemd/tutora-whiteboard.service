@@ -1,0 +1,36 @@
+# Tutora whiteboard sidecar (Node/Yjs). Loopback only; Apache proxies /wb to it.
+# /etc/tutora/whiteboard.env: WHITEBOARD_TOKEN_KEY, WHITEBOARD_INTERNAL_SECRET, ALLOWED_ORIGINS,
+# STORAGE_PATH=/var/lib/tutora (documents under STORAGE_PATH/whiteboard).
+[Unit]
+Description=Tutora whiteboard sidecar
+After=network-online.target
+
+[Service]
+Type=simple
+User=tutora-whiteboard
+Group=tutora
+EnvironmentFile=/etc/tutora/whiteboard.env
+WorkingDirectory=/var/www/tutora/whiteboard
+ExecStart=/usr/bin/node src/main.js
+Restart=always
+RestartSec=2
+# graceful stop flushes documents (SIGTERM handler)
+KillSignal=SIGTERM
+TimeoutStopSec=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/tutora/whiteboard
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

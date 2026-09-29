@@ -215,11 +215,12 @@ final class SessionService
         return $rev !== null;
     }
 
-    public function delete(int $sessionId, string $ip): bool
+    /** @param string $reason 'tutor' (manual) or 'retention' (purge job; no IP) */
+    public function delete(int $sessionId, ?string $ip, string $reason = 'tutor'): bool
     {
         $ok = $this->db->run('DELETE FROM sessions WHERE id = :id AND tenant_id = :tenant_id', ['id' => $sessionId])->rowCount() === 1;
         if ($ok) {
-            $this->audit->record($this->db->tenantId(), AuditLog::SESSION_DELETED, $ip, ['session_id' => $sessionId]);
+            $this->audit->record($this->db->tenantId(), AuditLog::SESSION_DELETED, $ip, ['session_id' => $sessionId, 'reason' => $reason]);
             $this->whiteboard->dropSession($sessionId);
         }
         return $ok;
