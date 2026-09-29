@@ -69,6 +69,13 @@ final class DockerConverterRunner implements ConverterRunner
         if ($this->apparmorProfile !== null) {
             array_push($argv, '--security-opt', 'apparmor=' . $this->apparmorProfile);
         }
+        if (basename($this->runtime) === 'podman') {
+            // Rootless Podman (owner decision 7): map the container user onto the service user,
+            // so the job's 0700 output directory owned by that user is writable. Without it the
+            // container uid maps to a subordinate uid that cannot write there.
+            [$uid, $gid] = explode(':', $this->user);
+            array_push($argv, '--userns', "keep-id:uid={$uid},gid={$gid}");
+        }
         $argv[] = $this->image;
         return $argv;
     }

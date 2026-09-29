@@ -3,7 +3,8 @@
 # from docs/IMPLEMENTATION_PLAN.md (network none, non-root, cap_drop ALL,
 # no-new-privileges, read-only root, job-specific mounts, pids/memory/CPU limits,
 # external wall-clock timeout, default seccomp profile).
-FROM ubuntu:24.04
+# fully qualified: rootless Podman refuses unqualified short names in non-interactive builds
+FROM docker.io/library/ubuntu:24.04
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \

@@ -1,75 +1,98 @@
 # Deployment and operations
 
-Production layout: the app in `/var/www/tutora` (document root `app/public`), data in
-`/var/lib/tutora` (`STORAGE_PATH`, never under the web root), configuration in
-`/var/www/tutora/.env` (mode 0640, owner root, group `tutora`) and `/etc/tutora/*`.
+## Automated installation (Ubuntu 24.04 LTS)
+
+Two scripts automate everything below; both are idempotent (re-run them to update) and take a
+root-only `KEY=VALUE` configuration file that is parsed, never executed.
+
+1. **Off-host restore machine first** — generates the backup key pair (private key stays there)
+   and the SSH key of its pull account:
+   ```sh
+   install -m 0600 deploy/install-offhost.conf.example /root/tutora-offhost.conf   # edit
+   sudo deploy/install-offhost.sh /root/tutora-offhost.conf
+   ```
+   It prints the two values production needs. **Export an offline copy of the private key**
+   (command printed) — without it no backup can be restored.
+2. **Production host** — from a checkout of the version to deploy:
+   ```sh
+   install -m 0600 deploy/install.conf.example /root/tutora-install.conf   # DOMAIN, SMTP, keys
+   sudo deploy/install.sh /root/tutora-install.conf
+   ```
+   Installs packages, Go and Node (checksum-pinned official downloads, see `deploy/lib.sh`), users
+   and groups, secrets (generated once, never rotated by the script), MariaDB database and accounts,
+   a new release in `/var/www/tutora-releases/<UTC>-<commit>` (composer/npm/go build, migrations,
+   atomic switch of the `/var/www/tutora` symlink, last 4 releases kept), rootless Podman and the
+   converter image, PHP-FPM, Apache with a Let's Encrypt certificate (certbot, auto-renewal),
+   all systemd units and timers, backups and the read-only pull account. It ends with checks:
+   services active, internal health endpoints, `https://DOMAIN/login`, `/internal` blocked,
+   cgroup controllers delegated for the sandbox limits, and a real sandboxed conversion as the
+   converter user. A non-zero exit means a check failed (the release is deployed; see the output).
+3. **Off-host again** — set `PRODUCTION_HOST` and `PRODUCTION_SSH_HOST_KEY` (content of
+   production's `/etc/ssh/ssh_host_ed25519_key.pub`, pinned, no trust-on-first-use) and re-run
+   `install-offhost.sh`; this enables the daily pull + restore test.
+
+Still manual (printed at the end): DNS, firewall (22/80/443), alerting via `OnFailure=` drop-ins,
+a test signup to confirm mail delivery, and keeping `install-offhost.sh` in step with production
+updates (its `/opt/tutora` migrations are the restore test's schema reference).
+
+> Verification status: both scripts were run end to end in an Ubuntu 24.04 systemd container
+> (`TLS_MODE=self-signed`): install, re-runs, a real PPTX conversion by the daemon through rootless
+> Podman, maintenance and backup units, the real SSH pull through `rrsync -ro` (write, delete, shell
+> and path escapes refused) and the off-host restore test. Not exercised there: Let's Encrypt
+> issuance (needs public DNS) and cgroup v2 enforcement of the sandbox limits (the test host was
+> cgroup v1 — the installer checks the delegation on the real host and fails if it is missing).
+
+## Layout
+
+The app in `/var/www/tutora` (a symlink to the current release; document root `app/public`), data
+in `/var/lib/tutora` (`STORAGE_PATH`, never under the web root), secrets in `/etc/tutora`
+(mode 0711: reachable, not listable): the app's `.env` is `/etc/tutora/tutora.env` (0640
+root:tutora-app, linked from each release), each service gets its own file with only its values.
 
 | File | Purpose |
 | --- | --- |
-| `apache/tutora-vhost.conf` | TLS vhost; WebSocket reverse proxy `/ws` → relay and `/wb` → whiteboard sidecar (loopback); internal APIs never proxied |
+| `install.sh`, `install-offhost.sh`, `lib.sh`, `*.conf.example` | the installers |
+| `apache/tutora-vhost.conf` | vhost template: port 80 (ACME + redirect), TLS vhost, PHP-FPM; WebSocket reverse proxy `/ws` → relay and `/wb` → whiteboard sidecar (loopback); internal APIs never proxied |
 | `systemd/tutora-relay.service` | Go realtime relay (loopback; binary at `/usr/local/bin/tutora-relay`) |
-| `systemd/tutora-whiteboard.service` | Node whiteboard sidecar (loopback) |
-| `systemd/tutora-converter.service` | slide conversion daemon (rootless container runtime) |
+| `systemd/tutora-whiteboard.service` | Node whiteboard sidecar (loopback; `/usr/local/bin/node`) |
+| `systemd/tutora-converter.service` | slide conversion daemon (rootless Podman) |
 | `systemd/tutora-purge.{service,timer}` | hourly maintenance (`app/bin/purge.php`): auto-end sessions live > 24 h, retention purge |
 | `systemd/tutora-backup.{service,timer}` | daily encrypted backup + on-host verification (public key only) |
 | `offhost/tutora-offhost-restore.{service,timer}` | on the off-host machine: pull + full restore test (private key) |
 | `backup/*.sh` | backup, verify, restore test, off-host wrapper, CI test |
 
-## Service users
+## Service users and groups
 
 | User | Needs |
 | --- | --- |
-| `www-data` (Apache/PHP) | read the app; read/write `/var/lib/tutora` (group `tutora`) |
-| `tutora` | purge job: DB access via `.env`, read/write `/var/lib/tutora` |
-| `tutora-converter` | its own rootless container runtime; read/write `/var/lib/tutora`; home `/var/lib/tutora-converter` |
-| `tutora-backup` | read `/var/lib/tutora` (member of group `tutora`), write `/var/backups/tutora`, a read-only DB account; public backup key only |
+| `www-data` (PHP-FPM) | read the app; read/write `/var/lib/tutora` (group `tutora`); app secrets (group `tutora-app`) |
+| `tutora` | maintenance job: app secrets, read/write `/var/lib/tutora` |
+| `tutora-converter` | its own rootless Podman; read/write `/var/lib/tutora`; app secrets; home `/var/lib/tutora-converter` |
+| `tutora-backup` | read `/var/lib/tutora`, write `/var/backups/tutora`, a read-only DB account; public backup key only |
 | `tutora-backup-pull` | SSH forced command `rrsync -ro /var/backups/tutora` for the off-host machine |
-| `tutora-relay` | nothing on disk; secrets in `/etc/tutora/relay.env` (0640 root:tutora-relay) |
-| `tutora-whiteboard` (group `tutora`) | read/write `/var/lib/tutora/whiteboard` (create it before the first start) |
+| `tutora-relay` | nothing on disk; `/etc/tutora/relay.env` only |
+| `tutora-whiteboard` (group `tutora`) | read/write `/var/lib/tutora/whiteboard`; `/etc/tutora/whiteboard.env` only |
 
-The systemd units set `UMask=0027` (0077 for relay and backups); set PHP-FPM/Apache so that
-`/var/lib/tutora` is not world-readable either (e.g. `chmod 2770` on the directory, group `tutora`).
+Group `tutora` (data) and group `tutora-app` (app secrets: DB password, keys) are separate, so the
+whiteboard and backup users can read data but not the app's secrets. `/var/lib/tutora` is
+`2770 root:tutora`; the systemd units set `UMask=0027` (0077 for relay and backups).
 
 ## Rootless container runtime (owner decision 7)
 
-The converter must not be in the `docker` group: access to a rootful Docker socket is
-root-equivalent. Use one of:
-
-**Rootless Podman** (no daemon): `CONVERTER_RUNTIME=podman` in `.env`.
-
-```sh
-useradd --system --home-dir /var/lib/tutora-converter --create-home --shell /usr/sbin/nologin tutora-converter
-usermod --add-subuids 200000-265535 --add-subgids 200000-265535 tutora-converter
-loginctl enable-linger tutora-converter        # creates /run/user/<uid> at boot
-echo "XDG_RUNTIME_DIR=/run/user/$(id -u tutora-converter)" > /etc/tutora/converter.env
-sudo -u tutora-converter XDG_RUNTIME_DIR=/run/user/$(id -u tutora-converter) \
-  podman build -t tutora-converter:latest /var/www/tutora/converter
-```
-
-**Rootless Docker**: `CONVERTER_RUNTIME=docker` in `.env`.
-
-```sh
-# as above: system user with home /var/lib/tutora-converter, subuid/subgid ranges, linger
-sudo -iu tutora-converter dockerd-rootless-setuptool.sh install
-echo "DOCKER_HOST=unix:///run/user/$(id -u tutora-converter)/docker.sock" > /etc/tutora/converter.env
-sudo -iu tutora-converter docker build -t tutora-converter:latest /var/www/tutora/converter
-```
-
-Then `systemctl enable --now tutora-converter`. The per-job sandbox profile (network none,
-non-root, cap_drop ALL, read-only root, noexec tmpfs, pids/memory/CPU limits, external
-timeout) is applied by `DockerConverterRunner` with either runtime.
-
-> Verification status: the runner and its sandbox are tested against rootful Docker in CI
-> (`converter` job). The rootless setup above follows the Docker/Podman documentation but could
-> not be exercised in the development environment (no rootless tooling there); run
-> `DockerConverterRunnerTest` as the service user once after setting it up:
-> `sudo -u tutora-converter TUTORA_TEST_CONVERTER_IMAGE=tutora-converter:latest php8.3 vendor/bin/phpunit --filter DockerConverterRunnerTest --fail-on-skipped`.
+The converter is never in the `docker` group (a rootful Docker socket is root-equivalent). The
+installer sets up **rootless Podman** for `tutora-converter`: subordinate uid/gid range, lingering
+user session (`/run/user/<uid>`), `Delegate=cpu cpuset io memory pids` for `user@.service` (the
+sandbox's `--cpus` needs the cpu controller), `fuse-overlayfs` as fallback storage, and builds the
+image as that user. `DockerConverterRunner` adds `--userns keep-id:uid=65532,gid=65532` for Podman,
+so the non-root container user maps onto `tutora-converter` and can write the job's 0700 output
+directory. The per-job sandbox profile (network none, non-root, cap_drop ALL, read-only root,
+noexec tmpfs, pids/memory/CPU limits, external timeout) is unchanged. Rootless Docker is not set
+up by the installer.
 
 ## Timers
 
 ```sh
-systemctl enable --now tutora-purge.timer tutora-backup.timer
-systemctl list-timers 'tutora-*'
+systemctl list-timers 'tutora-*'        # enabled by install.sh (backup only with a backup key)
 ```
 
 ## Backups (owner decisions 5, 19, 22)
@@ -113,6 +136,7 @@ GRANT SELECT, SHOW VIEW, TRIGGER, LOCK TABLES, EVENT ON tutora.* TO 'tutora_back
 ```
 
 ```sh
+# (done by install.sh; shown for reference)
 install -d -m 0700 -o tutora-backup /var/backups/tutora /var/lib/tutora-backup /var/lib/tutora-backup/gnupg
 install -m 0600 -o tutora-backup /dev/null /etc/tutora/backup.cnf   # [client] user/password/host
 cat > /etc/tutora/backup.env <<'ENV'
@@ -190,7 +214,7 @@ gpg --decrypt /var/backups/tutora-offhost/tutora-db-<UTC>.sql.gz.gpg    | ssh ad
 gpg --decrypt /var/backups/tutora-offhost/tutora-files-<UTC>.tar.gz.gpg | ssh admin@tutora.app 'sudo tar -C /var/lib/tutora -xzf -'
 
 # on production
-chown -R www-data:tutora /var/lib/tutora && chmod -R g+rwX,o-rwx /var/lib/tutora
+chgrp -R tutora /var/lib/tutora && chmod -R g+rwX,o-rwx /var/lib/tutora   # owners stay; or re-run install.sh
 sudo -u tutora php8.3 /var/www/tutora/app/bin/migrate.php   # applies migrations newer than the backup
 sudo -u tutora php8.3 /var/www/tutora/app/bin/purge.php     # re-purges data that expired meanwhile
 systemctl start tutora-whiteboard tutora-relay tutora-converter apache2 tutora-purge.timer tutora-backup.timer

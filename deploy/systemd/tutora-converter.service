@@ -23,7 +23,10 @@ RestartSec=2
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=yes
+# ProtectHome=yes would also make /run/user inaccessible, where the rootless runtime lives;
+# hide the real home directories explicitly instead
+ProtectHome=no
+InaccessiblePaths=-/home -/root
 # app storage, the service user's home (outside /home; rootless container storage) and its
 # runtime directory (rootless runtime socket / Podman state)
 ReadWritePaths=/var/lib/tutora /var/lib/tutora-converter -/run/user

@@ -84,6 +84,16 @@ jobs:
             -e DB_NAME=tutora -e STORAGE_PATH=/storage -e MIGRATIONS_DIR=/repo/app/migrations mariadb:10.11 bash -c \
             'rm -f /etc/apt/sources.list.d/mariadb* && apt-get update -qq && apt-get install -y -qq gpg-agent rsync > /dev/null && bash /repo/deploy/backup/ci-backup-test.sh'
 
+  deploy-scripts:
+    # static checks of the installer and backup scripts (they run as root on production)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: command -v shellcheck || (sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck)
+      - run: for f in deploy/*.sh deploy/backup/*.sh; do bash -n "$f"; done
+      - run: cd deploy && shellcheck -x -S warning install.sh install-offhost.sh lib.sh backup/*.sh
+      - run: systemd-analyze verify deploy/systemd/*.service deploy/systemd/*.timer deploy/offhost/*.service deploy/offhost/*.timer 2>&1 | grep -v 'is not executable' | (! grep .)
+
   relay:
     runs-on: ubuntu-24.04
     defaults:

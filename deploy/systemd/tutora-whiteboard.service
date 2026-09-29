@@ -11,7 +11,7 @@ User=tutora-whiteboard
 Group=tutora
 EnvironmentFile=/etc/tutora/whiteboard.env
 WorkingDirectory=/var/www/tutora/whiteboard
-ExecStart=/usr/bin/node src/main.js
+ExecStart=/usr/local/bin/node src/main.js
 Restart=always
 RestartSec=2
 # graceful stop flushes documents (SIGTERM handler)

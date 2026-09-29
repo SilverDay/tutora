@@ -158,8 +158,12 @@ Each phase ends with passing tests and is committed separately.
 - Backup + **restore test** (`deploy/backup`, owner decision 5: 14 days): dump without `USE`, restore only into a
   scratch DB, table-set and `CHECK TABLE` verification, optional streamed GPG encryption; exercised in CI
   (`backup` job) with the documented grants. Retention statement for the privacy policy in `deploy/README.md`.
-- Not verified here: the rootless runtime setup (no rootless tooling in the dev environment) and the systemd
-  units beyond `systemd-analyze verify`.
+- Installers `deploy/install.sh` (production) and `deploy/install-offhost.sh` (restore machine) automate
+  `deploy/README.md` on Ubuntu 24.04 (owner choices 2026-09-29: official Go/Node downloads, checksum-pinned;
+  Let's Encrypt via certbot; rootless Podman). Run end to end in an Ubuntu 24.04 systemd container
+  (conversion by the daemon through rootless Podman, units, SSH pull through `rrsync -ro`, off-host restore
+  test). Not exercisable there: Let's Encrypt issuance and cgroup v2 limit enforcement (the installer checks
+  the controller delegation on the real host and fails without it).
 
 ## 5. FK deletion rules
 

@@ -28,7 +28,8 @@ chmod 700 "$BACKUP_DIR"
 
 if [[ -n "$OFFHOST_SOURCE" ]]; then
   # only backup files; never --delete (retention is decided here, not by the source host)
-  rsync --recursive --times --ignore-existing --protect-args -e "$OFFHOST_SSH" \
+  # (no --protect-args/-s: rrsync on the source host disables it; the paths here are fixed)
+  rsync --recursive --times --ignore-existing -e "$OFFHOST_SSH" \
     --include='tutora-db-*.sql.gz.gpg' --include='tutora-files-*.tar.gz.gpg' --include='tutora-manifest-*.sha256' \
     --exclude='*' "$OFFHOST_SOURCE" "$BACKUP_DIR/"
 fi

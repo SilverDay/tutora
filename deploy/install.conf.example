@@ -1,0 +1,30 @@
+# Configuration for deploy/install.sh (production host). Copy to a root-only file, e.g.
+#   install -m 0600 deploy/install.conf.example /root/tutora-install.conf
+# KEY=VALUE per line; the file is parsed, never executed.
+
+# Public host name (DNS A/AAAA record must point to this server for Let's Encrypt)
+DOMAIN=tutora.example.org
+# Contact for Let's Encrypt expiry notices
+LETSENCRYPT_EMAIL=admin@example.org
+# letsencrypt (default) | self-signed (staging/test only: 30-day certificate, browsers warn)
+TLS_MODE=letsencrypt
+
+# Outbound mail: SMTP submission on port 587 with mandatory STARTTLS (owner decision 4)
+SMTP_HOST=smtp.example.org
+SMTP_PORT=587
+SMTP_USERNAME=tutora@example.org
+SMTP_PASSWORD=change-me
+SMTP_FROM=noreply@example.org
+SMTP_FROM_NAME=Tutora
+
+# Public backup key exported on the off-host restore machine (deploy/install-offhost.sh prints
+# its path). Without it the backup timer is NOT enabled (encryption is mandatory).
+BACKUP_PUBLIC_KEY=/root/tutora-backup-public.asc
+# SSH public key of the off-host restore machine's pull account (one line, ssh-ed25519 ...).
+# Without it no pull account is created.
+PULL_SSH_PUBLIC_KEY=
+
+# Optional
+#RETENTION_DAYS_DEFAULT=30
+#SESSION_MAX_LIVE_HOURS=24
+#UPLOAD_MAX_BYTES=52428800

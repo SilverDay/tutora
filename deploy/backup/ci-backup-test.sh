@@ -58,7 +58,8 @@ expect_fail 'BACKUP_UMASK must be' prod env BACKUP_UMASK=022 "$here/tutora-backu
 
 echo "== off-host: pull + full restore test (schema compared with the backup's migrations)"
 offhost "$here/tutora-offhost-restore-test.sh"
-ls "$work/offhost" | grep -c '^tutora-' | grep -x 3
+pulled=("$work"/offhost/tutora-*)
+[[ ${#pulled[@]} -eq 3 ]] || { echo "expected 3 pulled files, got ${#pulled[@]}"; exit 1; }
 
 echo "== verify detects tampering and a wrong recipient key"
 stamp=$(ls "$work/prod" | sed -nE 's/^tutora-manifest-(.*)\.sha256$/\1/p')
