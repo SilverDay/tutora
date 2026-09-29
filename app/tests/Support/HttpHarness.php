@@ -23,6 +23,8 @@ use Tutora\Support\FrozenClock;
 use Tutora\Tests\Unit\PasswordPolicyTest;
 use Tutora\Whiteboard\NullWhiteboardModeration;
 use Tutora\Auth\SignupVerification;
+use Tutora\Auth\RecoveryCodes;
+use Tutora\Auth\AccountNotices;
 use Tutora\Security\Logger;
 
 /** One browser-like client (own session store) against a fresh App instance. */
@@ -58,6 +60,8 @@ final class HttpHarness
             $this->session,
             $clock,
             new SignupVerification($pdo, $this->mailer, $clock, new Logger(static fn () => null), 'https://tutora.test'),
+            new RecoveryCodes($pdo, $clock),
+            new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
         ));
     }
 

@@ -98,15 +98,17 @@ final class AuthController
     public function confirmEnroll(Request $r): Response
     {
         $result = $this->auth->confirmEnrollment((string) $r->input('code'), $r->clientIp);
-        if (!$result->ok) {
-            // new secret on each attempt page render; keep it simple and restart enrolment
-            $enrol = $this->auth->beginEnrollment();
-            if ($enrol === null) {
-                return Response::redirect('/login');
-            }
-            return $this->view->render('auth/enroll', ['title' => 'Set up two-factor authentication', 'errors' => $result->errors] + $enrol, 422);
+        if ($result->ok) {
+            // shown exactly once, in this response
+            return $this->view->render('auth/recovery_codes', ['title' => 'Save your recovery codes', 'codes' => $result->recoveryCodes])
+                ->withHeader('Cache-Control', 'no-store');
         }
-        return Response::redirect('/dashboard');
+        // new secret on each attempt page render; keep it simple and restart enrolment
+        $enrol = $this->auth->beginEnrollment();
+        if ($enrol === null) {
+            return Response::redirect('/login');
+        }
+        return $this->view->render('auth/enroll', ['title' => 'Set up two-factor authentication', 'errors' => $result->errors] + $enrol, 422);
     }
 
     public function logout(Request $r): Response
@@ -117,7 +119,26 @@ final class AuthController
 
     public function showPassword(Request $r, TenantContext $t): Response
     {
-        return $this->view->render('account/password', ['title' => 'Change password', 'errors' => [], 'done' => false]);
+        return $this->account($t, [], false);
+    }
+
+    public function regenerateRecoveryCodes(Request $r, TenantContext $t): Response
+    {
+        $result = $this->auth->regenerateRecoveryCodes($t, (string) $r->input('current_password'), (string) $r->input('code'), $r->clientIp);
+        if (!$result->ok) {
+            return $this->account($t, $result->errors, false, 422);
+        }
+        return $this->view->render('auth/recovery_codes', ['title' => 'Save your recovery codes', 'codes' => $result->recoveryCodes])
+            ->withHeader('Cache-Control', 'no-store');
+    }
+
+    /** @param list<string> $errors */
+    private function account(TenantContext $t, array $errors, bool $done, int $status = 200): Response
+    {
+        return $this->view->render('account/password', [
+            'title' => 'Account', 'errors' => $errors, 'done' => $done,
+            'recoveryRemaining' => $this->auth->remainingRecoveryCodes($t),
+        ], $status);
     }
 
     public function changePassword(Request $r, TenantContext $t): Response
@@ -129,11 +150,7 @@ final class AuthController
             (string) $r->input('code'),
             $r->clientIp,
         );
-        return $this->view->render(
-            'account/password',
-            ['title' => 'Change password', 'errors' => $result->errors, 'done' => $result->ok],
-            $result->ok ? 200 : 422,
-        );
+        return $this->account($t, $result->errors, $result->ok, $result->ok ? 200 : 422);
     }
 
     private function redirectForStage(?AuthStage $stage): Response

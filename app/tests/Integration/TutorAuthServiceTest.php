@@ -6,14 +6,12 @@ namespace Tutora\Tests\Integration;
 
 use PDO;
 use PHPUnit\Framework\TestCase;
-use Tutora\Audit\AuditLog;
 use Tutora\Auth\ArraySessionStore;
 use Tutora\Auth\AuthStage;
 use Tutora\Auth\Base32;
 use Tutora\Auth\PasswordHasher;
 use Tutora\Auth\PasswordPolicy;
 use Tutora\Auth\Totp;
-use Tutora\Auth\TutorAccounts;
 use Tutora\Auth\TutorAuthService;
 use Tutora\Security\RateLimiter;
 use Tutora\Security\SecretBox;
@@ -22,6 +20,11 @@ use Tutora\Tests\Support\TestDatabase;
 use Tutora\Tests\Unit\PasswordPolicyTest;
 use Tutora\Tests\Support\RecordingMailer;
 use Tutora\Auth\SignupVerification;
+use Tutora\Auth\RecoveryCodes;
+use Tutora\Auth\AccountNotices;
+use Tutora\Auth\AdminMfaReset;
+use Tutora\Auth\TutorAccounts;
+use Tutora\Audit\AuditLog;
 use Tutora\Security\Logger;
 
 final class TutorAuthServiceTest extends TestCase
@@ -54,6 +57,8 @@ final class TutorAuthServiceTest extends TestCase
             $session,
             $this->clock,
             new SignupVerification($this->pdo, $this->mailer, $this->clock, new Logger(static fn () => null), 'https://tutora.test'),
+            new RecoveryCodes($this->pdo, $this->clock),
+            new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
         );
     }
 
@@ -265,4 +270,46 @@ final class TutorAuthServiceTest extends TestCase
     }
 
 
+
+    public function testRecoveryCodesAreStoredHashedAndSingleUse(): void
+    {
+        $this->registerAndEnrol();
+        $rows = $this->pdo->query('SELECT code_hash FROM tutor_recovery_codes')->fetchAll(PDO::FETCH_COLUMN);
+        self::assertCount(RecoveryCodes::COUNT, $rows);
+        foreach ($rows as $hash) {
+            self::assertSame(32, strlen($hash), 'only SHA-256 digests are stored');
+        }
+        self::assertFalse(RecoveryCodes::looksLikeCode('123456'));
+        self::assertTrue(RecoveryCodes::looksLikeCode(' abcd-efgh-ijkl-mnop '));
+        self::assertFalse(RecoveryCodes::looksLikeCode('ABCD-EFGH-IJKL-MNO1'), 'Base32 alphabet only');
+    }
+
+    public function testAdminResetClearsMfaAndIsAudited(): void
+    {
+        $this->registerAndEnrol();
+        $this->auth->logout('198.51.100.1');
+        $reset = new AdminMfaReset(
+            new TutorAccounts($this->pdo, $this->clock),
+            new RecoveryCodes($this->pdo, $this->clock),
+            new AuditLog($this->pdo, $this->clock),
+            new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
+        );
+        try {
+            $reset->reset('tutor@example.org', 'ops', '');
+            self::fail('reason required');
+        } catch (\InvalidArgumentException) {
+        }
+        self::assertFalse($reset->reset('nobody@example.org', 'ops', 'ticket 42'));
+        self::assertTrue($reset->reset('TUTOR@example.org', 'ops', 'ticket 42: lost phone'));
+
+        self::assertSame(0, (int) $this->pdo->query('SELECT COUNT(*) FROM tutor_recovery_codes')->fetchColumn());
+        self::assertNull($this->pdo->query('SELECT totp_secret_enc FROM tenants')->fetchColumn());
+        $event = $this->pdo->query("SELECT details FROM audit_events WHERE event_type = 'auth.mfa.reset'")->fetchColumn();
+        self::assertSame(['operator' => 'ops', 'reason' => 'ticket 42: lost phone'], json_decode((string) $event, true));
+        self::assertStringContainsString('two-factor', strtolower(end($this->mailer->sent)->textBody));
+
+        // next sign-in must enrol again; the password alone never yields a full session
+        self::assertSame(AuthStage::MfaEnrollment, $this->auth->login('tutor@example.org', self::PW, '198.51.100.1')->stage);
+        self::assertNull($this->auth->currentTenant());
+    }
 }

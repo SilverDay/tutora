@@ -24,6 +24,8 @@ use Tutora\Tests\Support\TestDatabase;
 use Tutora\Tests\Unit\PasswordPolicyTest;
 use Tutora\Tests\Support\RecordingMailer;
 use Tutora\Auth\SignupVerification;
+use Tutora\Auth\RecoveryCodes;
+use Tutora\Auth\AccountNotices;
 use Tutora\Security\Logger;
 
 final class AuthHttpFlowTest extends TestCase
@@ -56,6 +58,8 @@ final class AuthHttpFlowTest extends TestCase
             $this->session,
             $this->clock,
             new SignupVerification($pdo, $this->mailer, $this->clock, new Logger(static fn () => null), 'https://tutora.test'),
+            new RecoveryCodes($pdo, $this->clock),
+            new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
         ));
     }
 
@@ -99,7 +103,11 @@ final class AuthHttpFlowTest extends TestCase
         $secret = Base32::decode($m[1]);
         $code = Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp()));
         $r = $this->post('/login/enroll', ['code' => $code]);
-        self::assertSame('/dashboard', $r->headers['Location']);
+        self::assertSame(200, $r->status, 'recovery codes are shown once after enrolment');
+        self::assertSame('no-store', $r->headers['Cache-Control']);
+        preg_match_all('#<li><code>([A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4}-[A-Z2-7]{4})</code></li>#', $r->body, $m);
+        self::assertCount(10, $m[1]);
+        $recoveryCodes = $m[1];
         self::assertSame(200, $this->get('/dashboard')->status);
 
         $this->post('/logout', []);
@@ -114,6 +122,46 @@ final class AuthHttpFlowTest extends TestCase
         $r = $this->post('/login/mfa', ['code' => Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp()))]);
         self::assertSame('/dashboard', $r->headers['Location']);
         self::assertSame(200, $this->get('/dashboard')->status);
+    }
+
+    public function testRecoveryCodeLoginAndRegeneration(): void
+    {
+        $this->get('/signup');
+        $this->post('/signup', ['email' => 'k@example.org', 'display_name' => 'K', 'password' => 'a long enough passphrase']);
+        $this->post('/verify-email', ['token' => (string) $this->mailer->tokenFor('k@example.org'), 'password' => 'a long enough passphrase']);
+        preg_match('#<p class="secret"><code>([A-Z2-7 ]+)</code>#', $this->get('/login/enroll')->body, $m);
+        $secret = Base32::decode($m[1]);
+        $r = $this->post('/login/enroll', ['code' => Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp()))]);
+        preg_match_all('#<li><code>([A-Z2-7-]{19})</code></li>#', $r->body, $m);
+        $codes = $m[1];
+        $this->post('/logout', []);
+
+        $login = function (string $code): \Tutora\Http\Response {
+            $this->get('/login');
+            $this->post('/login', ['email' => 'k@example.org', 'password' => 'a long enough passphrase']);
+            $this->get('/login/mfa');
+            return $this->post('/login/mfa', ['code' => $code]);
+        };
+        self::assertSame('/dashboard', $login(strtolower($codes[0]))->headers['Location'] ?? null, 'recovery code accepted, case-insensitive');
+        self::assertStringContainsString('<strong>9</strong> unused recovery codes', $this->get('/account/password')->body);
+        $this->post('/logout', []);
+        self::assertSame(422, $login($codes[0])->status, 'a recovery code works only once');
+        self::assertCount(1, array_filter($this->mailer->sent, static fn ($msg) => str_contains($msg->subject, 'recovery code')), 'tutor notified on use');
+
+        // regeneration needs password + TOTP and invalidates the old codes
+        $this->clock->advance('PT2M');
+        self::assertSame('/dashboard', $login($codes[1])->headers['Location'] ?? null);
+        $this->get('/account/password');
+        $bad = $this->post('/account/recovery-codes', ['current_password' => 'wrong', 'code' => '000000']);
+        self::assertSame(422, $bad->status);
+        $r = $this->post('/account/recovery-codes', ['current_password' => 'a long enough passphrase', 'code' => Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp()))]);
+        self::assertSame(200, $r->status);
+        preg_match_all('#<li><code>([A-Z2-7-]{19})</code></li>#', $r->body, $m);
+        self::assertCount(10, $m[1]);
+        self::assertSame([], array_intersect($codes, $m[1]));
+        $this->post('/logout', []);
+        self::assertSame(422, $login($codes[2])->status, 'old codes invalidated');
+        self::assertSame('/dashboard', $login($m[1][0])->headers['Location'] ?? null);
     }
 
     public function testStateChangingRequestWithoutCsrfTokenRefused(): void

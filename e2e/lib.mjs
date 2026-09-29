@@ -38,5 +38,9 @@ export async function signUpTutor(page, base, outbox, email, password = 'a long 
   await page.waitForURL(base + '/login/enroll');
   await page.fill('[name=code]', totp(await page.textContent('p.secret code')));
   await page.click('form[action="/login/enroll"] button');
+  // recovery codes are shown once, then the tutor continues to the dashboard
+  const codes = await page.locator('[data-testid="recovery-codes"] code').allTextContents();
+  if (codes.length !== 10) throw new Error('expected 10 recovery codes, got ' + codes.length);
+  await page.click('a[href="/dashboard"]');
   await page.waitForURL(base + '/dashboard');
 }

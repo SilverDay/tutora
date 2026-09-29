@@ -39,6 +39,8 @@ final class TutorAuthService
         private readonly SessionStore $session,
         private readonly Clock $clock,
         private readonly SignupVerification $signups,
+        private readonly RecoveryCodes $recovery,
+        private readonly AccountNotices $notices,
     ) {
     }
 
@@ -158,12 +160,23 @@ final class TutorAuthService
         if ($wait > 0) {
             return AuthResult::throttled($wait);
         }
-        $secret = $this->totpBox->decrypt((string) $account['totp_secret_enc']);
-        $step = Totp::verify($secret, $code, $this->clock->now()->getTimestamp(), $account['totp_last_step'] === null ? null : (int) $account['totp_last_step']);
-        if ($step === null || !$this->accounts->consumeTotpStep($id, $step)) {
-            $this->limiter->recordFailure($acctKey, RateLimitPolicy::loginPerAccount());
-            $this->audit->record($id, AuditLog::MFA_FAILURE, $ip);
-            return AuthResult::fail(['Invalid authentication code.']);
+        if (RecoveryCodes::looksLikeCode($code)) {
+            if (!$this->recovery->consume($id, $code)) {
+                $this->limiter->recordFailure($acctKey, RateLimitPolicy::loginPerAccount());
+                $this->audit->record($id, AuditLog::MFA_FAILURE, $ip, ['method' => 'recovery_code']);
+                return AuthResult::fail(['Invalid authentication code.']);
+            }
+            $remaining = $this->recovery->remaining($id);
+            $this->audit->record($id, AuditLog::MFA_RECOVERY_USED, $ip, ['remaining' => $remaining]);
+            $this->notices->recoveryCodeUsed((string) $account['email'], $remaining);
+        } else {
+            $secret = $this->totpBox->decrypt((string) $account['totp_secret_enc']);
+            $step = Totp::verify($secret, $code, $this->clock->now()->getTimestamp(), $account['totp_last_step'] === null ? null : (int) $account['totp_last_step']);
+            if ($step === null || !$this->accounts->consumeTotpStep($id, $step)) {
+                $this->limiter->recordFailure($acctKey, RateLimitPolicy::loginPerAccount());
+                $this->audit->record($id, AuditLog::MFA_FAILURE, $ip);
+                return AuthResult::fail(['Invalid authentication code.']);
+            }
         }
         $this->limiter->reset($acctKey);
         $this->enterStage($id, AuthStage::Full);
@@ -209,13 +222,27 @@ final class TutorAuthService
         $this->audit->record($id, AuditLog::MFA_ENROLLED, $ip);
         $this->enterStage($id, AuthStage::Full);
         $this->audit->record($id, AuditLog::LOGIN_SUCCESS, $ip);
-        return AuthResult::stage(AuthStage::Full);
+        return AuthResult::withRecoveryCodes(AuthStage::Full, $this->recovery->regenerate($id));
     }
 
-    /**
-     * Password change requires the current password and a fresh TOTP code (re-authentication).
-     */
-    public function changePassword(TenantContext $tenant, string $current, string $new, string $totpCode, string $ip): AuthResult
+    /** New recovery codes (old ones become invalid); requires password + TOTP. */
+    public function regenerateRecoveryCodes(TenantContext $tenant, string $password, string $totpCode, string $ip): AuthResult
+    {
+        $check = $this->reauthenticate($tenant, $password, $totpCode);
+        if ($check !== null) {
+            return $check;
+        }
+        $this->audit->record($tenant->tenantId, AuditLog::MFA_RECOVERY_REGENERATED, $ip);
+        return AuthResult::withRecoveryCodes(AuthStage::Full, $this->recovery->regenerate($tenant->tenantId));
+    }
+
+    public function remainingRecoveryCodes(TenantContext $tenant): int
+    {
+        return $this->recovery->remaining($tenant->tenantId);
+    }
+
+    /** Current password + fresh TOTP code; null on success, otherwise the failure result. */
+    private function reauthenticate(TenantContext $tenant, string $password, string $totpCode): ?AuthResult
     {
         $account = $this->accounts->findById($tenant->tenantId);
         if ($account === null || $account['totp_secret_enc'] === null) {
@@ -228,11 +255,24 @@ final class TutorAuthService
         }
         $secret = $this->totpBox->decrypt((string) $account['totp_secret_enc']);
         $step = Totp::verify($secret, $totpCode, $this->clock->now()->getTimestamp(), $account['totp_last_step'] === null ? null : (int) $account['totp_last_step']);
-        if (!$this->hasher->verify($current, (string) $account['password_hash'])
+        if (!$this->hasher->verify($password, (string) $account['password_hash'])
             || $step === null || !$this->accounts->consumeTotpStep($tenant->tenantId, $step)) {
             $this->limiter->recordFailure($acctKey, RateLimitPolicy::loginPerAccount());
             return AuthResult::fail(['Current password or authentication code is incorrect.']);
         }
+        return null;
+    }
+
+    /**
+     * Password change requires the current password and a fresh TOTP code (re-authentication).
+     */
+    public function changePassword(TenantContext $tenant, string $current, string $new, string $totpCode, string $ip): AuthResult
+    {
+        $check = $this->reauthenticate($tenant, $current, $totpCode);
+        if ($check !== null) {
+            return $check;
+        }
+        $account = $this->accounts->findById($tenant->tenantId);
         $errors = $this->policy->validate($new, (string) $account['email']);
         if ($errors !== []) {
             return AuthResult::fail($errors);

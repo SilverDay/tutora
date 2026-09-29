@@ -71,6 +71,13 @@ final class TutorAccounts
         )->execute([$encryptedSecret, $now, $usedStep, $now, $id]);
     }
 
+    /** Removes TOTP (admin reset): the next login goes through enrolment again. */
+    public function resetTotp(int $id): void
+    {
+        $this->pdo->prepare('UPDATE tenants SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ?')
+            ->execute([Time::toDb($this->clock->now()), $id]);
+    }
+
     /**
      * Atomically advances the last used TOTP step. Returns false if another request
      * already used this (or a later) step — closes the replay race between two requests.

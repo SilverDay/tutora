@@ -16,6 +16,9 @@ use Tutora\Auth\PasswordHasher;
 use Tutora\Auth\PasswordPolicy;
 use Tutora\Auth\SessionStore;
 use Tutora\Auth\SignupVerification;
+use Tutora\Auth\AccountNotices;
+use Tutora\Auth\AdminMfaReset;
+use Tutora\Auth\RecoveryCodes;
 use Tutora\Mail\FileMailer;
 use Tutora\Mail\Mailer;
 use Tutora\Mail\SmtpMailer;
@@ -194,6 +197,7 @@ final class App
         $r->add('POST', $pb . '/quiz/{question:[A-Za-z0-9_-]+}/answer', fn (Request $q) => $p()->answer($q));
         $r->add('GET', '/account/password', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->showPassword($q, $t)));
         $r->add('POST', '/account/password', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->changePassword($q, $t)));
+        $r->add('POST', '/account/recovery-codes', $this->tutor(fn (Request $q, TenantContext $t) => $auth()->regenerateRecoveryCodes($q, $t)));
     }
 
     /**
@@ -389,6 +393,20 @@ final class App
             $this->session,
             $this->clock,
             new SignupVerification($this->pdo(), $this->mailer(), $this->clock, $this->logger, $this->config->string('APP_BASE_URL')),
+            new RecoveryCodes($this->pdo(), $this->clock),
+            new AccountNotices($this->mailer(), $this->logger, $this->config->string('APP_BASE_URL')),
+        );
+    }
+
+    /** For bin/admin-reset-mfa.php. */
+    public static function adminMfaReset(Config $config): AdminMfaReset
+    {
+        $app = new self($config, new \Tutora\Auth\ArraySessionStore());
+        return new AdminMfaReset(
+            new TutorAccounts($app->pdo(), $app->clock),
+            new RecoveryCodes($app->pdo(), $app->clock),
+            new AuditLog($app->pdo(), $app->clock),
+            new AccountNotices($app->mailer(), $app->logger, $config->string('APP_BASE_URL')),
         );
     }
 

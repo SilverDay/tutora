@@ -20,6 +20,8 @@ final class AuditLog
     public const MFA_FAILURE = 'auth.mfa.failure';
     public const MFA_ENROLLED = 'auth.mfa.enrolled';
     public const MFA_RESET = 'auth.mfa.reset';
+    public const MFA_RECOVERY_USED = 'auth.mfa.recovery_code_used';
+    public const MFA_RECOVERY_REGENERATED = 'auth.mfa.recovery_codes_regenerated';
     public const LOGOUT = 'auth.logout';
     public const SIGNUP = 'auth.signup';
     public const PASSWORD_CHANGED = 'auth.password.changed';
