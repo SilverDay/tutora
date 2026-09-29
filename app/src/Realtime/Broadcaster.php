@@ -19,4 +19,10 @@ interface Broadcaster
      * @param self::TARGET_*|null $targetRole null = everyone in the room
      */
     public function broadcast(int $sessionId, array $message, ?string $targetRole = null): void;
+
+    /**
+     * Closes all tutor connections of a session and refuses tutor tokens issued until now
+     * (the tutor's credentials changed; see TutorRealtimeRevoker).
+     */
+    public function revokeTutor(int $sessionId): void;
 }

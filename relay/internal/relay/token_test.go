@@ -39,7 +39,7 @@ func TestVerifiesPHPMintedTokens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("participant token rejected: %v", err)
 	}
-	if c.SessionID != 42 || c.Role != RoleParticipant || c.Actor != "0123456789abcdef0123456789abcdef" {
+	if c.SessionID != 42 || c.Role != RoleParticipant || c.Actor != "0123456789abcdef0123456789abcdef" || c.Iat != now.Unix() {
 		t.Fatalf("unexpected claims %+v", c)
 	}
 	c, err = VerifyToken(v.Tutor, key, now)

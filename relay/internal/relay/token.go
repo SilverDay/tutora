@@ -30,6 +30,8 @@ type Claims struct {
 	Role      Role   `json:"role"`
 	Aud       string `json:"aud"`
 	Exp       int64  `json:"exp"`
+	// Iat (issued at, Unix seconds) lets the hub refuse tokens minted before a revocation.
+	Iat int64 `json:"iat"`
 }
 
 var (

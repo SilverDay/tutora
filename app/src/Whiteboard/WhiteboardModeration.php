@@ -14,4 +14,7 @@ interface WhiteboardModeration
     public function endSession(int $sessionId): void;
 
     public function dropSession(int $sessionId): void;
+
+    /** Closes all tutor connections of a session and refuses tutor tokens issued until now. */
+    public function revokeTutor(int $sessionId): void;
 }

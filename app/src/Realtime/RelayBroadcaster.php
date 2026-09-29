@@ -50,6 +50,18 @@ final class RelayBroadcaster implements Broadcaster
         }
     }
 
+    public function revokeTutor(int $sessionId): void
+    {
+        try {
+            $status = ($this->post)(rtrim($this->baseUrl, '/') . '/internal/revoke', json_encode(['session_id' => $sessionId, 'role' => 'tutor'], JSON_THROW_ON_ERROR), $this->secret);
+            if ($status !== 200) {
+                $this->logger->error('Relay tutor revocation not accepted', ['status' => $status, 'session_id' => $sessionId]);
+            }
+        } catch (\Throwable $e) {
+            $this->logger->error('Relay tutor revocation failed', ['session_id' => $sessionId, 'error' => $e::class]);
+        }
+    }
+
     private function curlPost(string $url, string $body, string $secret): int
     {
         $ch = curl_init($url);

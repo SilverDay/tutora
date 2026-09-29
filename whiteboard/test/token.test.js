@@ -9,7 +9,7 @@ const key = Buffer.from(v.key_hex, 'hex');
 
 test('verifies a token minted by the PHP app', () => {
   const c = verifyToken(v.participant, key, v.now_unix);
-  assert.deepEqual(c, { sid: 7, bid: 70, actor: '0123456789abcdef0123456789abcdef', role: 'participant', kind: 'annotate', tags: ['t1', 't2'], exp: v.now_unix + 60 });
+  assert.deepEqual(c, { sid: 7, bid: 70, actor: '0123456789abcdef0123456789abcdef', role: 'participant', kind: 'annotate', tags: ['t1', 't2'], exp: v.now_unix + 60, iat: v.now_unix });
 });
 
 test('rejects expiry, other audience, wrong key, tampering', () => {

@@ -10,6 +10,10 @@ eraser, annotate tags, presenter mode over the relay, clear, and snapshots (manu
 block exit) by sampling canvas pixels in the other browser. It needs the relay and the
 whiteboard sidecar running.
 
+`session-revocation.e2e.mjs` signs the same tutor in from two browsers, changes the password in one
+and checks that the other is signed out and that the relay closed its open connection (takes ~1 min: it
+waits for fresh TOTP steps because codes are single-use).
+
 `activities.e2e.mjs` drives the real UI in Chromium against a running stack: tutor signup
 with TOTP, workshop authoring, a live session with two participants, every activity type,
 both quiz modes, live updates over the relay, Write privacy, wall moderation, and it fails

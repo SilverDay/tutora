@@ -37,6 +37,7 @@ var (
 	ErrTooManyConnections = errors.New("too many connections")
 	ErrRoomFull           = errors.New("room full")
 	ErrSessionEnded       = errors.New("session ended")
+	ErrRevoked            = errors.New("token revoked")
 )
 
 // endedTTL must exceed the connection-token lifetime (60 s) so a token minted just before
@@ -71,19 +72,22 @@ type room struct {
 // Hub holds all rooms (room = session_id). State is in memory only and is lost on
 // restart; clients recover via HTTP state (fetch-then-subscribe), per the spec.
 type Hub struct {
-	mu     sync.Mutex
-	rooms  map[int64]*room
-	ended  map[int64]time.Time
-	nextID uint64
-	limits Limits
-	now    func() time.Time
+	mu    sync.Mutex
+	rooms map[int64]*room
+	ended map[int64]time.Time
+	// revokedTutor: session -> time of the last tutor revocation (credentials changed);
+	// tutor tokens issued at or before it are refused for endedTTL (> token lifetime).
+	revokedTutor map[int64]time.Time
+	nextID       uint64
+	limits       Limits
+	now          func() time.Time
 }
 
 func NewHub(limits Limits, now func() time.Time) *Hub {
 	if now == nil {
 		now = time.Now
 	}
-	return &Hub{rooms: map[int64]*room{}, ended: map[int64]time.Time{}, limits: limits, now: now}
+	return &Hub{rooms: map[int64]*room{}, ended: map[int64]time.Time{}, revokedTutor: map[int64]time.Time{}, limits: limits, now: now}
 }
 
 func (h *Hub) roomLocked(sid int64) *room {
@@ -113,6 +117,14 @@ func (h *Hub) Register(c Claims) (*Client, error) {
 	if _, ok := h.ended[c.SessionID]; ok {
 		return nil, ErrSessionEnded
 	}
+	for sid, at := range h.revokedTutor {
+		if now.Sub(at) > endedTTL {
+			delete(h.revokedTutor, sid)
+		}
+	}
+	if at, ok := h.revokedTutor[c.SessionID]; ok && c.Role == RoleTutor && c.Iat <= at.Unix() {
+		return nil, ErrRevoked
+	}
 	r := h.roomLocked(c.SessionID)
 	total := 0
 	for _, conns := range r.clients {
@@ -141,6 +153,34 @@ func (h *Hub) Register(c Claims) (*Client, error) {
 	}
 	h.presenceLocked(r)
 	return cl, nil
+}
+
+// RevokeTutor disconnects every tutor connection of a session and refuses tutor tokens
+// issued up to now (the tutor's credentials changed; PHP ended their other sessions).
+// Returns the number of connections closed.
+func (h *Hub) RevokeTutor(sid int64) int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.revokedTutor[sid] = h.now()
+	r := h.rooms[sid]
+	if r == nil {
+		return 0
+	}
+	var targets []*Client
+	for _, conns := range r.clients {
+		for _, cl := range conns {
+			if cl.Role == RoleTutor {
+				targets = append(targets, cl)
+			}
+		}
+	}
+	for _, cl := range targets {
+		h.removeLocked(r, cl)
+	}
+	if h.rooms[sid] != nil {
+		h.presenceLocked(r)
+	}
+	return len(targets)
 }
 
 // Unregister removes a connection. Idempotent.

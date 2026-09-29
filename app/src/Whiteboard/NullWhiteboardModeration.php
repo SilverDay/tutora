@@ -29,4 +29,9 @@ final class NullWhiteboardModeration implements WhiteboardModeration
     {
         $this->calls[] = ['drop_session', $sessionId];
     }
+
+    public function revokeTutor(int $sessionId): void
+    {
+        $this->calls[] = ['revoke_tutor', $sessionId];
+    }
 }

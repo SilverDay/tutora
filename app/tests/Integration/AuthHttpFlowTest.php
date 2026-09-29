@@ -26,6 +26,9 @@ use Tutora\Tests\Support\RecordingMailer;
 use Tutora\Auth\SignupVerification;
 use Tutora\Auth\RecoveryCodes;
 use Tutora\Auth\AccountNotices;
+use Tutora\Auth\TutorRealtimeRevoker;
+use Tutora\Realtime\NullBroadcaster;
+use Tutora\Whiteboard\NullWhiteboardModeration;
 use Tutora\Security\Logger;
 
 final class AuthHttpFlowTest extends TestCase
@@ -60,6 +63,7 @@ final class AuthHttpFlowTest extends TestCase
             new SignupVerification($pdo, $this->mailer, $this->clock, new Logger(static fn () => null), 'https://tutora.test'),
             new RecoveryCodes($pdo, $this->clock),
             new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
+            new TutorRealtimeRevoker($pdo, new NullBroadcaster(), new NullWhiteboardModeration()),
         ));
     }
 

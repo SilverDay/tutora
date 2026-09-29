@@ -182,6 +182,11 @@ requires operator + reason and a typed confirmation, clears TOTP and codes, audi
 
 Still open (housekeeping): make `main` the default branch on GitHub; decide whether to add PHPStan as a CI-only step.
 
-Still open (security): a password change or admin MFA reset does not yet end the tutor's *other* active
-sessions (only the current session is regenerated). Proposed fix: a per-tenant `auth_epoch` counter stored in
-the session and checked on every tutor request.
+Session invalidation ✅ (owner go-ahead 2026-09-29): a per-tenant `auth_epoch` (migration 0005) is bumped
+atomically with a password change, an admin MFA reset or a recovery code regeneration. Every tutor session
+(including the partial sign-in stages) stores the epoch it was established with and is ended on its next
+request once it differs; the session that made the change adopts the new value. Open realtime connections are
+closed too: PHP calls `POST /internal/revoke` on the relay and `revoke_tutor` on the whiteboard sidecar for
+each live session of the tenant, which close all tutor sockets and refuse tutor tokens with `iat` ≤ the
+revocation time for 5 min (> 60 s token lifetime). Sessions created before this change carry no epoch and
+must sign in again once.

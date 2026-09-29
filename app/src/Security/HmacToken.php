@@ -36,8 +36,11 @@ final class HmacToken
         if ($ttlSeconds <= 0) {
             throw new \InvalidArgumentException('TTL must be positive');
         }
+        $now = $this->clock->now()->getTimestamp();
         $claims['aud'] = $this->audience;
-        $claims['exp'] = $this->clock->now()->getTimestamp() + $ttlSeconds;
+        // iat lets the relay/sidecar refuse tokens minted before a tutor revocation
+        $claims['iat'] = $now;
+        $claims['exp'] = $now + $ttlSeconds;
         $payload = Base64Url::encode(json_encode($claims, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
         return $payload . '.' . Base64Url::encode(hash_hmac('sha256', $payload, $this->key, true));
     }

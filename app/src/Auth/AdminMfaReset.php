@@ -18,6 +18,7 @@ final class AdminMfaReset
         private readonly RecoveryCodes $recovery,
         private readonly AuditLog $audit,
         private readonly AccountNotices $notices,
+        private readonly TutorRealtimeRevoker $realtime,
     ) {
     }
 
@@ -34,7 +35,8 @@ final class AdminMfaReset
             return false;
         }
         $id = (int) $account['id'];
-        $this->accounts->resetTotp($id);
+        $this->accounts->resetTotp($id); // also ends all HTTP sessions (auth epoch)
+        $this->realtime->revokeAll($id);
         $this->recovery->deleteAll($id);
         $this->audit->record($id, AuditLog::MFA_RESET, null, ['operator' => mb_substr($operator, 0, 100), 'reason' => mb_substr($reason, 0, 500)]);
         $this->notices->mfaReset((string) $account['email']);

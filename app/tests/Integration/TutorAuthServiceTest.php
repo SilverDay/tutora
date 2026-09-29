@@ -22,6 +22,9 @@ use Tutora\Tests\Support\RecordingMailer;
 use Tutora\Auth\SignupVerification;
 use Tutora\Auth\RecoveryCodes;
 use Tutora\Auth\AccountNotices;
+use Tutora\Auth\TutorRealtimeRevoker;
+use Tutora\Realtime\NullBroadcaster;
+use Tutora\Whiteboard\NullWhiteboardModeration;
 use Tutora\Auth\AdminMfaReset;
 use Tutora\Auth\TutorAccounts;
 use Tutora\Audit\AuditLog;
@@ -35,6 +38,8 @@ final class TutorAuthServiceTest extends TestCase
     private ArraySessionStore $session;
     private TutorAuthService $auth;
     private RecordingMailer $mailer;
+    private NullBroadcaster $relay;
+    private NullWhiteboardModeration $wbModeration;
 
     protected function setUp(): void
     {
@@ -42,6 +47,8 @@ final class TutorAuthServiceTest extends TestCase
         $this->clock = new FrozenClock('2026-03-01 10:00:00');
         $this->session = new ArraySessionStore();
         $this->mailer = new RecordingMailer();
+        $this->relay = new NullBroadcaster();
+        $this->wbModeration = new NullWhiteboardModeration();
         $this->auth = $this->service($this->session);
     }
 
@@ -59,6 +66,7 @@ final class TutorAuthServiceTest extends TestCase
             new SignupVerification($this->pdo, $this->mailer, $this->clock, new Logger(static fn () => null), 'https://tutora.test'),
             new RecoveryCodes($this->pdo, $this->clock),
             new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
+            new TutorRealtimeRevoker($this->pdo, $this->relay, $this->wbModeration),
         );
     }
 
@@ -293,6 +301,7 @@ final class TutorAuthServiceTest extends TestCase
             new RecoveryCodes($this->pdo, $this->clock),
             new AuditLog($this->pdo, $this->clock),
             new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
+            new TutorRealtimeRevoker($this->pdo, $this->relay, $this->wbModeration),
         );
         try {
             $reset->reset('tutor@example.org', 'ops', '');
@@ -311,5 +320,107 @@ final class TutorAuthServiceTest extends TestCase
         // next sign-in must enrol again; the password alone never yields a full session
         self::assertSame(AuthStage::MfaEnrollment, $this->auth->login('tutor@example.org', self::PW, '198.51.100.1')->stage);
         self::assertNull($this->auth->currentTenant());
+    }
+
+    /** Signs in a second, independent browser session; returns it at the Full stage. */
+    private function secondSession(string $secret, string $password = self::PW): TutorAuthService
+    {
+        $this->clock->advance('PT1M'); // fresh TOTP step (replay protection)
+        $other = $this->service(new ArraySessionStore());
+        self::assertSame(AuthStage::MfaPending, $other->login('tutor@example.org', $password, '198.51.100.2')->stage);
+        self::assertSame(AuthStage::Full, $other->verifyMfa(Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp())), '198.51.100.2')->stage);
+        self::assertNotNull($other->currentTenant());
+        return $other;
+    }
+
+    private function freshCode(string $secret): string
+    {
+        $this->clock->advance('PT1M');
+        return Totp::code($secret, Totp::stepAt($this->clock->now()->getTimestamp()));
+    }
+
+    public function testPasswordChangeEndsOtherSessionsButKeepsCurrent(): void
+    {
+        $secret = $this->registerAndEnrol();
+        $other = $this->secondSession($secret);
+        // a third browser that is half-way through sign-in (password done, TOTP pending)
+        $pending = $this->service(new ArraySessionStore());
+        self::assertSame(AuthStage::MfaPending, $pending->login('tutor@example.org', self::PW, '198.51.100.3')->stage);
+
+        $tenant = $this->auth->currentTenant();
+        self::assertTrue($this->auth->changePassword($tenant, self::PW, 'another long passphrase', $this->freshCode($secret), '198.51.100.1')->ok);
+
+        self::assertNotNull($this->auth->currentTenant(), 'the session that changed the password continues');
+        self::assertNull($other->currentTenant(), 'other signed-in session ended');
+        self::assertNull($other->currentStage(), 'its session data is destroyed');
+        self::assertFalse($pending->verifyMfa($this->freshCode($secret), '198.51.100.3')->ok, 'pending sign-in with the old password cannot complete');
+    }
+
+    public function testRecoveryCodeRegenerationEndsOtherSessions(): void
+    {
+        $secret = $this->registerAndEnrol();
+        $other = $this->secondSession($secret);
+        $r = $this->auth->regenerateRecoveryCodes($this->auth->currentTenant(), self::PW, $this->freshCode($secret), '198.51.100.1');
+        self::assertCount(RecoveryCodes::COUNT, $r->recoveryCodes);
+        self::assertNotNull($this->auth->currentTenant());
+        self::assertNull($other->currentTenant());
+    }
+
+    public function testFailedReauthenticationDoesNotEndSessions(): void
+    {
+        $secret = $this->registerAndEnrol();
+        $other = $this->secondSession($secret);
+        self::assertFalse($this->auth->changePassword($this->auth->currentTenant(), 'wrong', 'another long passphrase', $this->freshCode($secret), '198.51.100.1')->ok);
+        self::assertFalse($this->auth->regenerateRecoveryCodes($this->auth->currentTenant(), 'wrong', $this->freshCode($secret), '198.51.100.1')->ok);
+        self::assertNotNull($other->currentTenant());
+    }
+
+    public function testAdminMfaResetEndsAllSessions(): void
+    {
+        $secret = $this->registerAndEnrol();
+        $other = $this->secondSession($secret);
+        $reset = new AdminMfaReset(
+            new TutorAccounts($this->pdo, $this->clock),
+            new RecoveryCodes($this->pdo, $this->clock),
+            new AuditLog($this->pdo, $this->clock),
+            new AccountNotices($this->mailer, new Logger(static fn () => null), 'https://tutora.test'),
+            new TutorRealtimeRevoker($this->pdo, $this->relay, $this->wbModeration),
+        );
+        self::assertTrue($reset->reset('tutor@example.org', 'ops', 'ticket 42: lost phone'));
+        self::assertNull($this->auth->currentTenant());
+        self::assertNull($other->currentTenant());
+    }
+
+    public function testSessionWithoutEpochIsRejected(): void
+    {
+        // sessions created before the auth epoch existed carry no value: sign in again
+        $session = new ArraySessionStore();
+        $auth = $this->service($session);
+        $secret = $this->registerAndEnrol();
+        self::assertSame(AuthStage::MfaPending, $auth->login('tutor@example.org', self::PW, '198.51.100.2')->stage);
+        $auth->verifyMfa($this->freshCode($secret), '198.51.100.2');
+        self::assertNotNull($auth->currentTenant());
+        $session->remove('auth_epoch');
+        self::assertNull($auth->currentTenant());
+    }
+
+    public function testCredentialChangesRevokeRealtimeConnectionsOfLiveSessions(): void
+    {
+        $secret = $this->registerAndEnrol();
+        $tenant = $this->auth->currentTenant();
+        $this->pdo->prepare(
+            "INSERT INTO sessions (tenant_id, workshop_id, workshop_title_snapshot, join_code, active_join_code, status, session_revision, started_at, created_at)
+             VALUES (?, NULL, 'W', 'ABCDEF', 'ABCDEF', 'live', 1, NOW(3), NOW(3))"
+        )->execute([$tenant->tenantId]);
+        $sid = (int) $this->pdo->lastInsertId();
+
+        $this->auth->regenerateRecoveryCodes($tenant, self::PW, $this->freshCode($secret), '198.51.100.1');
+        self::assertSame([$sid], $this->relay->revokedTutor);
+        $this->auth->changePassword($tenant, self::PW, 'another long passphrase', $this->freshCode($secret), '198.51.100.1');
+        self::assertSame([$sid, $sid], $this->relay->revokedTutor);
+        self::assertSame([['revoke_tutor', $sid], ['revoke_tutor', $sid]], $this->wbModeration->calls);
+        // failed re-authentication revokes nothing
+        $this->auth->changePassword($tenant, 'wrong', 'yet another passphrase', $this->freshCode($secret), '198.51.100.1');
+        self::assertCount(2, $this->relay->revokedTutor);
     }
 }

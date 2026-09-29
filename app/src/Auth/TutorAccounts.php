@@ -54,13 +54,40 @@ final class TutorAccounts
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function updatePasswordHash(int $id, string $hash, bool $isChange): void
+    /**
+     * Stores a new password hash. A change (not a rehash) also increments auth_epoch in the
+     * same statement, ending all other sessions.
+     *
+     * @return int|null the new auth epoch for a change, null for a rehash
+     */
+    public function updatePasswordHash(int $id, string $hash, bool $isChange): ?int
     {
         $now = Time::toDb($this->clock->now());
-        $sql = $isChange
-            ? 'UPDATE tenants SET password_hash = ?, password_changed_at = ?, updated_at = ? WHERE id = ?'
-            : 'UPDATE tenants SET password_hash = ?, updated_at = ? WHERE id = ?';
-        $this->pdo->prepare($sql)->execute($isChange ? [$hash, $now, $now, $id] : [$hash, $now, $id]);
+        if (!$isChange) {
+            $this->pdo->prepare('UPDATE tenants SET password_hash = ?, updated_at = ? WHERE id = ?')->execute([$hash, $now, $id]);
+            return null;
+        }
+        $this->pdo->prepare(
+            'UPDATE tenants SET password_hash = ?, password_changed_at = ?, updated_at = ?, auth_epoch = LAST_INSERT_ID(auth_epoch + 1) WHERE id = ?'
+        )->execute([$hash, $now, $now, $id]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    /** Ends all sessions of the account (except one that adopts the returned value). */
+    public function bumpAuthEpoch(int $id): int
+    {
+        // LAST_INSERT_ID(expr) returns exactly this statement's value on this connection (race-free)
+        $this->pdo->prepare('UPDATE tenants SET auth_epoch = LAST_INSERT_ID(auth_epoch + 1), updated_at = ? WHERE id = ?')
+            ->execute([Time::toDb($this->clock->now()), $id]);
+        return (int) $this->pdo->lastInsertId();
+    }
+
+    public function authEpoch(int $id): ?int
+    {
+        $s = $this->pdo->prepare('SELECT auth_epoch FROM tenants WHERE id = ?');
+        $s->execute([$id]);
+        $v = $s->fetchColumn();
+        return $v === false ? null : (int) $v;
     }
 
     public function enableTotp(int $id, string $encryptedSecret, int $usedStep): void
@@ -71,10 +98,10 @@ final class TutorAccounts
         )->execute([$encryptedSecret, $now, $usedStep, $now, $id]);
     }
 
-    /** Removes TOTP (admin reset): the next login goes through enrolment again. */
+    /** Removes TOTP (admin reset) and ends all sessions: the next login goes through enrolment again. */
     public function resetTotp(int $id): void
     {
-        $this->pdo->prepare('UPDATE tenants SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_last_step = NULL, updated_at = ? WHERE id = ?')
+        $this->pdo->prepare('UPDATE tenants SET totp_secret_enc = NULL, totp_enabled_at = NULL, totp_last_step = NULL, auth_epoch = auth_epoch + 1, updated_at = ? WHERE id = ?')
             ->execute([Time::toDb($this->clock->now()), $id]);
     }
 

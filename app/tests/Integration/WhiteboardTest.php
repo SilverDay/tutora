@@ -53,7 +53,7 @@ final class WhiteboardTest extends TestCase
         $t = $this->wb->participantToken($p, $this->live->blocks[0]);
         $c = $this->tokens->verify($t['token']);
         self::assertSame(['sid' => $this->live->sessionId, 'bid' => $this->live->blocks[0], 'actor' => $p->actorId, 'role' => 'participant',
-            'kind' => 'whiteboard', 'tags' => [], 'aud' => 'tutora-whiteboard', 'exp' => $this->clock->now()->getTimestamp() + 60], $c);
+            'kind' => 'whiteboard', 'tags' => [], 'aud' => 'tutora-whiteboard', 'iat' => $this->clock->now()->getTimestamp(), 'exp' => $this->clock->now()->getTimestamp() + 60], $c);
 
         $this->live->goTo(1);
         $c = $this->tokens->verify($this->wb->participantToken($p, $this->live->blocks[1])['token']);

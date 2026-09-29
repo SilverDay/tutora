@@ -23,6 +23,9 @@ export function createServers(cfg) {
   const manager = new DocManager(cfg.persistence);
   const origins = new Set(cfg.allowedOrigins);
   const ended = new Map();
+  // session -> ms of the last tutor revocation (credentials changed): tutor tokens issued
+  // at or before it are refused for ENDED_TTL_MS (> token lifetime)
+  const revokedTutor = new Map();
   const buckets = new Map(); // `${sid}:${actor}` -> { tokens, last, conns }
   const log = cfg.logger ?? ((m) => console.error(`whiteboard ${new Date().toISOString()} ${m}`));
 
@@ -80,10 +83,16 @@ export function createServers(cfg) {
         if (!c) { ws.close(CLOSE.AUTH_FAILED, 'authentication failed'); return; }
         const endedAt = ended.get(c.sid);
         if (endedAt !== undefined && now() - endedAt < ENDED_TTL_MS) { ws.close(CLOSE.ENDED, 'session ended'); return; }
+        const revokedAt = revokedTutor.get(c.sid);
+        if (c.role === 'tutor' && revokedAt !== undefined && now() - revokedAt < ENDED_TTL_MS && c.iat <= Math.floor(revokedAt / 1000)) {
+          ws.close(CLOSE.AUTH_FAILED, 'authentication failed');
+          return;
+        }
         bucket = bucketFor(c);
         if (bucket.conns >= limits.maxConnsPerActor) { ws.close(CLOSE.LIMIT, 'too many connections'); return; }
         bucket.conns++;
         claims = c;
+        conn.role = c.role;
         entry = manager.get(c.sid, c.bid);
         entry.conns.add(conn);
         send(JSON.stringify({ type: 'auth_ok', role: c.role }));
@@ -178,6 +187,13 @@ export function createServers(cfg) {
           manager.closeSession(sid, CLOSE.ENDED, 'session ended');
           reply(200, { ok: true });
           return;
+        case 'revoke_tutor': {
+          const t = now();
+          for (const [k, at] of revokedTutor) if (t - at >= ENDED_TTL_MS) revokedTutor.delete(k);
+          revokedTutor.set(sid, t);
+          reply(200, { closed: manager.closeRole(sid, 'tutor', CLOSE.AUTH_FAILED, 'revoked') });
+          return;
+        }
         case 'drop_session':
           ended.set(sid, now());
           manager.dropSession(sid);

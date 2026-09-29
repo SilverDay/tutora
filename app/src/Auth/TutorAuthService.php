@@ -23,6 +23,7 @@ final class TutorAuthService
     private const S_LAST_SEEN = 'auth_last_seen';
     private const S_FULL_SINCE = 'auth_full_since';
     private const S_PENDING_SECRET = 'auth_pending_totp';
+    private const S_EPOCH = 'auth_epoch';
 
     /** time allowed between password step and TOTP/enrolment step */
     public const PARTIAL_STAGE_TTL = 600;
@@ -41,6 +42,7 @@ final class TutorAuthService
         private readonly SignupVerification $signups,
         private readonly RecoveryCodes $recovery,
         private readonly AccountNotices $notices,
+        private readonly TutorRealtimeRevoker $realtime,
     ) {
     }
 
@@ -232,6 +234,10 @@ final class TutorAuthService
         if ($check !== null) {
             return $check;
         }
+        // treated like a credential change: other sessions end, this one continues
+        $this->session->set(self::S_EPOCH, $this->accounts->bumpAuthEpoch($tenant->tenantId));
+        $this->session->regenerate();
+        $this->realtime->revokeAll($tenant->tenantId);
         $this->audit->record($tenant->tenantId, AuditLog::MFA_RECOVERY_REGENERATED, $ip);
         return AuthResult::withRecoveryCodes(AuthStage::Full, $this->recovery->regenerate($tenant->tenantId));
     }
@@ -277,9 +283,11 @@ final class TutorAuthService
         if ($errors !== []) {
             return AuthResult::fail($errors);
         }
-        $this->accounts->updatePasswordHash($tenant->tenantId, $this->hasher->hash($new), true);
+        // other sessions end (auth epoch bumped in the same statement); this one continues
+        $this->session->set(self::S_EPOCH, $this->accounts->updatePasswordHash($tenant->tenantId, $this->hasher->hash($new), true));
         $this->audit->record($tenant->tenantId, AuditLog::PASSWORD_CHANGED, $ip);
         $this->session->regenerate();
+        $this->realtime->revokeAll($tenant->tenantId);
         return AuthResult::stage(AuthStage::Full);
     }
 
@@ -293,7 +301,7 @@ final class TutorAuthService
         $now = $this->clock->now()->getTimestamp();
         $lastSeen = (int) $this->session->get(self::S_LAST_SEEN);
         $fullSince = (int) $this->session->get(self::S_FULL_SINCE);
-        if ($now - $lastSeen > self::IDLE_TIMEOUT || $now - $fullSince > self::ABSOLUTE_TIMEOUT) {
+        if ($now - $lastSeen > self::IDLE_TIMEOUT || $now - $fullSince > self::ABSOLUTE_TIMEOUT || !$this->epochValid($id)) {
             $this->logout(null);
             return null;
         }
@@ -326,6 +334,7 @@ final class TutorAuthService
         $this->session->set(self::S_STAGE_SINCE, $now);
         $this->session->set(self::S_LAST_SEEN, $now);
         $this->session->remove('_csrf');
+        $this->session->set(self::S_EPOCH, $this->accounts->authEpoch($tenantId));
         if ($stage === AuthStage::Full) {
             $this->session->set(self::S_FULL_SINCE, $now);
         }
@@ -337,10 +346,19 @@ final class TutorAuthService
         if (!is_int($id) || $this->session->get(self::S_STAGE) !== $required->value) {
             return null;
         }
-        if ($this->clock->now()->getTimestamp() - (int) $this->session->get(self::S_STAGE_SINCE) > self::PARTIAL_STAGE_TTL) {
+        if ($this->clock->now()->getTimestamp() - (int) $this->session->get(self::S_STAGE_SINCE) > self::PARTIAL_STAGE_TTL
+            || !$this->epochValid($id)) {
             $this->session->destroy();
             return null;
         }
         return $id;
+    }
+
+    /** False once the account's credentials changed after this session was established (or it is gone). */
+    private function epochValid(int $tenantId): bool
+    {
+        $stored = $this->session->get(self::S_EPOCH);
+        $current = $this->accounts->authEpoch($tenantId);
+        return is_int($stored) && $current !== null && $stored === $current;
     }
 }

@@ -19,6 +19,7 @@ use Tutora\Auth\SignupVerification;
 use Tutora\Auth\AccountNotices;
 use Tutora\Auth\AdminMfaReset;
 use Tutora\Auth\RecoveryCodes;
+use Tutora\Auth\TutorRealtimeRevoker;
 use Tutora\Mail\FileMailer;
 use Tutora\Mail\Mailer;
 use Tutora\Mail\SmtpMailer;
@@ -395,7 +396,13 @@ final class App
             new SignupVerification($this->pdo(), $this->mailer(), $this->clock, $this->logger, $this->config->string('APP_BASE_URL')),
             new RecoveryCodes($this->pdo(), $this->clock),
             new AccountNotices($this->mailer(), $this->logger, $this->config->string('APP_BASE_URL')),
+            $this->realtimeRevoker(),
         );
+    }
+
+    private function realtimeRevoker(): TutorRealtimeRevoker
+    {
+        return new TutorRealtimeRevoker($this->pdo(), $this->broadcaster(), $this->whiteboardModeration());
     }
 
     /** For bin/admin-reset-mfa.php. */
@@ -407,6 +414,7 @@ final class App
             new RecoveryCodes($app->pdo(), $app->clock),
             new AuditLog($app->pdo(), $app->clock),
             new AccountNotices($app->mailer(), $app->logger, $config->string('APP_BASE_URL')),
+            $app->realtimeRevoker(),
         );
     }
 

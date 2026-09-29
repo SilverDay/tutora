@@ -370,3 +370,74 @@ func TestOversizedMessageClosesConnection(t *testing.T) {
 		t.Fatalf("expected %d, got %d", websocket.CloseMessageTooBig, code)
 	}
 }
+
+func (e *env) revoke(secret string, body any) int {
+	raw, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", e.internal.URL+"/internal/revoke", bytes.NewReader(raw))
+	if secret != "" {
+		req.Header.Set("Authorization", "Bearer "+secret)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func tutorTokenIssuedAt(sid, iat int64) string {
+	return mint(testKey, map[string]any{"sid": sid, "actor": "tutor", "role": "tutor", "aud": Audience, "iat": iat, "exp": time.Now().Unix() + 60})
+}
+
+func TestRevokeTutorClosesTutorConnectionsOnly(t *testing.T) {
+	e := newEnv(t, nil)
+	if code := e.revoke("", map[string]any{"session_id": 1, "role": "tutor"}); code != http.StatusUnauthorized {
+		t.Fatalf("revoke without secret: %d", code)
+	}
+	if code := e.revoke(testSecret, map[string]any{"session_id": 1, "role": "participant"}); code != http.StatusBadRequest {
+		t.Fatalf("only the tutor role can be revoked: %d", code)
+	}
+	tutor1 := e.connect(1, "tutor", RoleTutor)
+	tutor2 := e.connect(1, "tutor", RoleTutor)
+	other := e.connect(2, "tutor", RoleTutor)
+	p := e.connect(1, actorA, RoleParticipant)
+	if code := e.revoke(testSecret, map[string]any{"session_id": 1, "role": "tutor"}); code != http.StatusOK {
+		t.Fatalf("revoke: %d", code)
+	}
+	for _, c := range []*websocket.Conn{tutor1, tutor2} {
+		if code := closeCode(t, c); code != websocket.CloseNormalClosure {
+			t.Fatalf("tutor connection should be closed, got %d", code)
+		}
+	}
+	// participants and other sessions are untouched
+	for _, c := range []*websocket.Conn{p, other} {
+		_ = c.WriteJSON(map[string]string{"type": "ping"})
+		readType(t, c, "pong")
+	}
+}
+
+func TestRevokeTutorRefusesTokensIssuedBefore(t *testing.T) {
+	e := newEnv(t, nil)
+	e.revoke(testSecret, map[string]any{"session_id": 1, "role": "tutor"})
+	now := time.Now().Unix()
+	for name, tok := range map[string]string{
+		"issued before": tutorTokenIssuedAt(1, now-1),
+		"no iat":        token(1, "tutor", RoleTutor),
+	} {
+		c, _, _ := e.dial(testOrigin, "")
+		_ = c.WriteJSON(map[string]string{"type": "auth", "token": tok})
+		if code := closeCode(t, c); code != closeAuthFailed {
+			t.Fatalf("%s: expected %d, got %d", name, closeAuthFailed, code)
+		}
+		c.Close()
+	}
+	// a token minted after the revocation (from the tutor's still valid session) works
+	c, _, _ := e.dial(testOrigin, "")
+	defer c.Close()
+	_ = c.WriteJSON(map[string]string{"type": "auth", "token": tutorTokenIssuedAt(1, now+1)})
+	if m := read(t, c); m["type"] != "auth_ok" {
+		t.Fatalf("expected auth_ok, got %v", m)
+	}
+	// participants of the session are not affected
+	e.connect(1, actorA, RoleParticipant)
+}

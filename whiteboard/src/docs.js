@@ -80,6 +80,16 @@ export class DocManager {
     }
   }
 
+  /** Closes the connections of one role in a session; returns how many. */
+  closeRole(sid, role, code, reason) {
+    let n = 0;
+    for (const e of this.docs.values()) {
+      if (e.sid !== sid) continue;
+      for (const c of [...e.conns]) if (c.role === role) { c.close(code, reason); n++; }
+    }
+    return n;
+  }
+
   dropSession(sid) {
     this.closeSession(sid, 4410, 'session removed');
     for (const [k, e] of [...this.docs]) {

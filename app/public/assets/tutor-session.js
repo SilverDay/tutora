@@ -16,6 +16,11 @@ async function getToken() {
     method: 'POST', headers: { 'X-CSRF-Token': csrf, 'Accept': 'application/json' },
     credentials: 'same-origin', cache: 'no-store',
   });
+  if (res.status === 401) {
+    // signed out elsewhere (e.g. password changed in another browser): stop and sign in again
+    window.location.assign('/login');
+    return null;
+  }
   if (!res.ok) return null;
   return (await res.json()).token;
 }

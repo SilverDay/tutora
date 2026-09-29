@@ -140,3 +140,29 @@ test('internal moderation: auth, remove actor across blocks, clear, end session'
     void SECRET;
   } finally { await env.close(); }
 });
+
+test('revoke_tutor closes tutor connections and refuses tutor tokens issued before it', async () => {
+  const env = await startEnv();
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const tutor = await connect(env, { ...TUTOR, iat: now - 5 }).ready;
+    const otherSession = await connect(env, { ...TUTOR, sid: 2, iat: now - 5 }).ready;
+    const a = await connect(env, P(A)).ready;
+    const r = await moderate(env, { session_id: 1, action: 'revoke_tutor' });
+    assert.deepEqual(r, { status: 200, body: { closed: 1 } });
+    assert.equal((await tutor.closedPromise).code, CLOSE.AUTH_FAILED);
+
+    for (const claims of [{ ...TUTOR, iat: now - 1 }, TUTOR /* no iat */]) {
+      const late = connect(env, claims);
+      assert.equal((await late.closedPromise).code, CLOSE.AUTH_FAILED, 'token from before the revocation refused');
+    }
+    await connect(env, { ...TUTOR, iat: now + 1 }).ready; // minted afterwards by a still valid session
+    await connect(env, P(B)).ready; // participants unaffected
+
+    // participant and other-session connections still work
+    a.doc.getMap('entities').set('a-after-revoke', stroke(A, 1));
+    assert.ok(await until(() => env.manager.get(1, 1).doc.getMap('entities').has('a-after-revoke')));
+    otherSession.doc.getMap('entities').set('t-other-session', stroke('tutor', 1));
+    assert.ok(await until(() => env.manager.get(2, 1).doc.getMap('entities').has('t-other-session')));
+  } finally { await env.close(); }
+});

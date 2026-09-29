@@ -84,6 +84,7 @@ func (s *Server) PublicHandler() http.Handler {
 func (s *Server) InternalHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /internal/broadcast", s.serveBroadcast)
+	mux.HandleFunc("POST /internal/revoke", s.serveRevoke)
 	mux.HandleFunc("GET /internal/health", func(w http.ResponseWriter, r *http.Request) {
 		rooms, conns := s.hub.Stats()
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "rooms": rooms, "connections": conns})
@@ -121,8 +122,11 @@ func (s *Server) serveWS(w http.ResponseWriter, r *http.Request) {
 	cl, err := s.hub.Register(claims)
 	if err != nil {
 		code := closeLimit
-		if err == ErrSessionEnded {
+		switch err {
+		case ErrSessionEnded:
 			code = closeSessionEnded
+		case ErrRevoked:
+			code = closeAuthFailed
 		}
 		closeWith(conn, code, err.Error())
 		return
@@ -241,6 +245,28 @@ func (s *Server) serveBroadcast(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(req.Message, &compact)
 	n := s.hub.BroadcastInternal(req.SessionID, head.Type, compact, req.TargetRole)
 	writeJSON(w, http.StatusAccepted, map[string]any{"delivered": n})
+}
+
+type revokeRequest struct {
+	SessionID int64 `json:"session_id"`
+	Role      Role  `json:"role"`
+}
+
+// serveRevoke closes all tutor connections of a session (PHP calls it after a credential
+// change ended the tutor's other HTTP sessions). Only the tutor role can be revoked.
+func (s *Server) serveRevoke(w http.ResponseWriter, r *http.Request) {
+	if !s.authorizedInternal(r) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	var req revokeRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, 4096)).Decode(&req); err != nil || req.SessionID <= 0 || req.Role != RoleTutor {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad request"})
+		return
+	}
+	n := s.hub.RevokeTutor(req.SessionID)
+	s.cfg.Logger.Printf("revoke session=%d role=tutor closed=%d", req.SessionID, n)
+	writeJSON(w, http.StatusOK, map[string]any{"closed": n})
 }
 
 // authorizedInternal compares the bearer secret in constant time (hashing first so the

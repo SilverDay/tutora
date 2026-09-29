@@ -44,6 +44,11 @@ final class SidecarWhiteboardModeration implements WhiteboardModeration
         $this->call(['session_id' => $sessionId, 'action' => 'drop_session']);
     }
 
+    public function revokeTutor(int $sessionId): void
+    {
+        $this->call(['session_id' => $sessionId, 'action' => 'revoke_tutor']);
+    }
+
     /** @param array<string,int|string> $body */
     private function call(array $body): void
     {
