@@ -35,7 +35,13 @@ final class Aggregator
         return ['responses' => $n] + $out;
     }
 
-    /** Count + percentage (of respondents) per option. */
+    /**
+     * Count + percentage (of respondents) per option.
+     *
+     * @param list<array<string,mixed>> $options
+     * @param list<array<string,mixed>> $payloads
+     * @return array<string,mixed>
+     */
     private static function tally(array $options, array $payloads, string $key, int $n): array
     {
         $counts = array_fill_keys(array_column($options, 'id'), 0);
@@ -54,7 +60,12 @@ final class Aggregator
         return ['options' => $rows];
     }
 
-    /** @param list<int|float> $values */
+    /**
+     * @param list<int|float> $values
+     *
+     * @param array<string,mixed> $config
+     * @return array<string,mixed>
+     */
     private static function meter(array $config, array $values): array
     {
         if ($values === []) {
@@ -80,6 +91,11 @@ final class Aggregator
         return ['mean' => round(array_sum($values) / $n, 3), 'median' => $median, 'distribution' => array_values($dist)];
     }
 
+    /**
+     * @param array<string,mixed> $config
+     * @param list<array<string,mixed>> $payloads
+     * @return array<string,mixed>
+     */
     private static function rate(array $config, array $payloads): array
     {
         $scale = (int) $config['scale'];
@@ -102,7 +118,13 @@ final class Aggregator
         return ['items' => $rows];
     }
 
-    /** Borda count: with n items, position i (0-based) earns n-1-i points. */
+    /**
+     * Borda count: with n items, position i (0-based) earns n-1-i points.
+     *
+     * @param list<array<string,mixed>> $items
+     * @param list<array<string,mixed>> $payloads
+     * @return array<string,mixed>
+     */
     private static function borda(array $items, array $payloads): array
     {
         $n = count($items);
@@ -122,7 +144,13 @@ final class Aggregator
         return ['ranking' => $rows];
     }
 
-    /** Per-item scatter cluster (anonymous points) and centroid. */
+    /**
+     * Per-item scatter cluster (anonymous points) and centroid.
+     *
+     * @param list<array<string,mixed>> $items
+     * @param list<array<string,mixed>> $payloads
+     * @return array<string,mixed>
+     */
     private static function plot(array $items, array $payloads): array
     {
         $rows = [];
@@ -142,7 +170,12 @@ final class Aggregator
         return ['items' => $rows];
     }
 
-    /** Frequency tally, case-insensitive, top 100. */
+    /**
+     * Frequency tally, case-insensitive, top 100.
+     *
+     * @param list<array<string,mixed>> $payloads
+     * @return array<string,mixed>
+     */
     private static function cloud(array $payloads): array
     {
         $freq = [];

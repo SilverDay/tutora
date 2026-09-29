@@ -75,7 +75,7 @@ final class SessionService
         );
         $sessionId = $db->lastInsertId();
         $first = null;
-        foreach (array_values($blocks) as $pos => $b) {
+        foreach ($blocks as $pos => $b) {
             // INSERT ... SELECT through sessions keeps the write tenant-scoped
             $db->run(
                 'INSERT INTO session_blocks (session_id, source_workshop_block_id, position, block_type, config_snapshot, config_version, slide_asset_id)

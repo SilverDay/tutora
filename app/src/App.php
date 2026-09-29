@@ -156,7 +156,7 @@ final class App
         $r->add('POST', '/workshops/{id:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->delete($q, $t)));
         $r->add('POST', '/workshops/{id:\d+}/blocks', $this->tutor(fn (Request $q, TenantContext $t) => $ws($t)->addBlock($q, $t)));
         $r->add('POST', '/workshops/{id:\d+}/slides', $this->tutor(fn (Request $q, TenantContext $t) => $sl()->upload(
-            $q, $this->slideImports($t), fn (array $errors) => $ws($t)->show($q, $t, $errors, 422),
+            $q, $this->slideImports($t), fn (array $errors) => $ws($t)->show($q, $t, array_values(array_map('strval', $errors)), 422),
         )));
         $r->add('POST', '/workshops/{id:\d+}/slides/{import:\d+}/add-all', $this->tutor(fn (Request $q, TenantContext $t) => $sl()->addAll(
             $q, $this->slideImports($t), new WorkshopRepository($this->tenantDb($t), $this->clock),

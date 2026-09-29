@@ -103,7 +103,7 @@ final class SessionExporter
     /**
      * @param array<string,mixed> $c
      * @param array<string,mixed> $p
-     * @return list<array{0:?string, 1:string|int|float}>
+     * @return array<int, array{0:?string, 1:mixed}>
      */
     private static function submissionCells(string $type, array $c, array $p): array
     {

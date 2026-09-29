@@ -117,7 +117,8 @@ final class ConversionWorker
     private function claim(): ?array
     {
         return Transaction::run($this->pdo, function (PDO $pdo): ?array {
-            $job = $pdo->query("SELECT * FROM conversion_jobs WHERE status = 'pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED")->fetch();
+            $stmt = $pdo->query("SELECT * FROM conversion_jobs WHERE status = 'pending' ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED");
+            $job = $stmt === false ? false : $stmt->fetch();
             if ($job === false) {
                 return null;
             }
@@ -128,6 +129,9 @@ final class ConversionWorker
         });
     }
 
+    /**
+     * @param array<string,mixed> $job
+     */
     private function prepare(array $job, string $jobDir): void
     {
         $source = (string) $job['source_path'];
@@ -163,7 +167,10 @@ final class ConversionWorker
             if ($size === false || $size < 8 || $size > self::MAX_IMAGE_BYTES) {
                 return null;
             }
-            $fh = fopen($path, 'rb');
+            $fh = @fopen($path, 'rb');
+            if ($fh === false) {
+                return null;
+            }
             $sig = fread($fh, 8);
             fclose($fh);
             $info = @getimagesize($path);
@@ -181,7 +188,11 @@ final class ConversionWorker
         return array_values($pages);
     }
 
-    /** @param list<array{path:string,page:int,width:int,height:int}> $pages */
+    /**
+     * @param list<array{path:string,page:int,width:int,height:int}> $pages
+     *
+     * @param array<string,mixed> $job
+     */
     private function persist(array $job, array $pages): void
     {
         $dir = $this->storage->importDir((int) $job['tenant_id'], (int) $job['slide_import_id']);
@@ -210,6 +221,9 @@ final class ConversionWorker
         }
     }
 
+    /**
+     * @param array<string,mixed> $job
+     */
     private function fail(array $job, int|string $reason): void
     {
         // an unavailable runtime (125 etc.) is retried; deterministic converter failures are not

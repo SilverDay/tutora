@@ -25,7 +25,9 @@ final class Logger
     /** @param (callable(string):void)|null $sink */
     public function __construct(?callable $sink = null)
     {
-        $this->sink = $sink ?? static fn (string $line) => error_log($line);
+        $this->sink = $sink ?? static function (string $line): void {
+            error_log($line);
+        };
     }
 
     /** @param array<string,mixed> $context */

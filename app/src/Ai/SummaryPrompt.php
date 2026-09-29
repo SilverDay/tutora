@@ -40,7 +40,7 @@ final class SummaryPrompt
             $parts[] = $open . "\n" . self::clean($r, $nonce) . "\n" . $close;
         }
         $user = 'Summarise these ' . count($responses) . " responses.\n\n" . implode("\n", $parts);
-        return new self($system, $user, array_values($responses), $nonce);
+        return new self($system, $user, $responses, $nonce);
     }
 
     /** Removes anything that looks like one of our markers (defence in depth). */

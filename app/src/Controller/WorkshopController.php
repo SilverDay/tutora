@@ -53,6 +53,9 @@ final class WorkshopController
         return Response::redirect('/workshops/' . $id);
     }
 
+    /**
+     * @param list<string> $errors
+     */
     public function show(Request $r, TenantContext $t, array $errors = [], int $status = 200): Response
     {
         $id = $r->intParam('id');

@@ -111,10 +111,10 @@ final class WorkshopRepository
                 return null;
             }
             $this->assertAsset($db, $workshopId, $type, $slideAssetId);
-            $count = (int) $db->one(
+            $count = (int) ($db->one(
                 'SELECT COUNT(*) AS n FROM workshop_blocks b JOIN workshops w ON w.id = b.workshop_id WHERE w.id = :id AND w.tenant_id = :tenant_id',
                 ['id' => $workshopId],
-            )['n'];
+            )['n'] ?? 0);
             if ($count >= Limits::MAX_BLOCKS_PER_WORKSHOP) {
                 throw new ValidationException(['This workshop already has the maximum number of blocks.']);
             }

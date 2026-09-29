@@ -97,7 +97,8 @@ final class SubmissionService
         }
         $q = $this->pdo->prepare('SELECT payload FROM block_submissions WHERE session_id = ? AND session_block_id = ? ORDER BY id');
         $q->execute([$sessionId, $sessionBlockId]);
-        $payloads = array_map(static fn ($v) => json_decode((string) $v, true, 64, JSON_THROW_ON_ERROR), $q->fetchAll(PDO::FETCH_COLUMN));
+        /** @var list<array<string,mixed>> $payloads stored payloads are validated JSON objects */
+        $payloads = array_values(array_map(static fn ($v) => json_decode((string) $v, true, 64, JSON_THROW_ON_ERROR), $q->fetchAll(PDO::FETCH_COLUMN)));
         return Aggregator::aggregate(BlockType::from($b['block_type']), json_decode((string) $b['config_snapshot'], true, 64, JSON_THROW_ON_ERROR), $payloads);
     }
 

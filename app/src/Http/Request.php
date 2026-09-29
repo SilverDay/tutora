@@ -45,7 +45,7 @@ final class Request
             $headers['content-type'] = (string) $_SERVER['CONTENT_TYPE'];
         }
         $path = parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
-        $body = (string) file_get_contents('php://input', false, null, 0, $maxBodyBytes + 1);
+        $body = (string) file_get_contents('php://input', false, null, 0, max(0, $maxBodyBytes) + 1);
         if (strlen($body) > $maxBodyBytes) {
             throw new HttpException(413, 'Request body too large');
         }

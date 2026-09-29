@@ -278,7 +278,7 @@ final class TutorAuthService
         if ($check !== null) {
             return $check;
         }
-        $account = $this->accounts->findById($tenant->tenantId);
+        $account = $this->accounts->findById($tenant->tenantId) ?? throw new \RuntimeException('Account vanished during password change');
         $errors = $this->policy->validate($new, (string) $account['email']);
         if ($errors !== []) {
             return AuthResult::fail($errors);

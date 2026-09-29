@@ -41,6 +41,8 @@ jobs:
       - run: composer install --no-interaction --no-progress
       - name: Lint
         run: find src public bin tests -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Static analysis (PHPStan level 8)
+        run: vendor/bin/phpstan analyse --no-progress --memory-limit=1G
       - run: vendor/bin/phpunit
 
   backup:

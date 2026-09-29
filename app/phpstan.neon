@@ -1,0 +1,9 @@
+# Static analysis (owner decision 21): level 8 (incl. strict null checks), no baseline.
+# Run: vendor/bin/phpstan analyse
+parameters:
+    level: 8
+    phpVersion: 80300
+    paths:
+        - src
+        - bin
+    tmpDir: var/phpstan

@@ -40,13 +40,21 @@ final class SubmissionValidator
         };
     }
 
-    /** @return list<string> */
+    /**
+     * @return list<string>
+     *
+     * @param array<string,mixed> $config
+     */
     private static function ids(array $config, string $key): array
     {
         return array_column($config[$key] ?? [], 'id');
     }
 
-    /** @return list<string> */
+    /**
+     * @return list<string>
+     *
+     * @param list<string> $allowed
+     */
     private static function idList(mixed $v, array $allowed, int $min, int $max, string $what): array
     {
         if (!is_array($v) || !array_is_list($v) || count($v) < $min || count($v) > $max) {
@@ -63,6 +71,10 @@ final class SubmissionValidator
         return $v;
     }
 
+    /**
+     * @param list<string> $keys
+     * @param array<string,mixed> $payload
+     */
     private static function onlyKeys(array $payload, array $keys): void
     {
         if (array_diff(array_keys($payload), $keys) !== []) {
@@ -70,6 +82,11 @@ final class SubmissionValidator
         }
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function poll(array $c, array $p): array
     {
         self::onlyKeys($p, ['selected']);
@@ -77,6 +94,11 @@ final class SubmissionValidator
         return ['selected' => self::idList($p['selected'] ?? null, self::ids($c, 'options'), $min, (int) ($c['max_selections'] ?? 1), 'options')];
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function meter(array $c, array $p): array
     {
         self::onlyKeys($p, ['value']);
@@ -91,6 +113,11 @@ final class SubmissionValidator
         return ['value' => $v];
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function rate(array $c, array $p): array
     {
         self::onlyKeys($p, ['ratings']);
@@ -109,6 +136,11 @@ final class SubmissionValidator
         return ['ratings' => $out];
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function rank(array $c, array $p): array
     {
         self::onlyKeys($p, ['order']);
@@ -117,12 +149,22 @@ final class SubmissionValidator
         return ['order' => $order];
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function word(array $c, array $p): array
     {
         self::onlyKeys($p, ['selected']);
         return ['selected' => self::idList($p['selected'] ?? null, self::ids($c, 'items'), 1, (int) $c['max_selections'], 'items')];
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function plot(array $c, array $p): array
     {
         self::onlyKeys($p, ['points']);
@@ -152,6 +194,11 @@ final class SubmissionValidator
         return ['points' => $out];
     }
 
+    /**
+     * @param array<string,mixed> $c
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function wordCloud(array $c, array $p): array
     {
         self::onlyKeys($p, ['words']);
@@ -171,6 +218,10 @@ final class SubmissionValidator
         return ['words' => array_values($out)];
     }
 
+    /**
+     * @param array<string,mixed> $p
+     * @return array<string,mixed>
+     */
     private static function write(array $p): array
     {
         self::onlyKeys($p, ['text']);

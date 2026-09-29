@@ -27,7 +27,11 @@ final class RecoveryCodes
         return preg_match(self::FORMAT, strtoupper(str_replace(' ', '', trim($input)))) === 1;
     }
 
-    /** Replaces all codes of a tenant; returns the new plaintext codes (display once). */
+    /**
+     * Replaces all codes of a tenant; returns the new plaintext codes (display once).
+     *
+     * @return list<string>
+     */
     public function regenerate(int $tenantId): array
     {
         $codes = [];

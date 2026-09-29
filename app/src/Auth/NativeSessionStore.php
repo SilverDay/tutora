@@ -57,7 +57,7 @@ final class NativeSessionStore implements SessionStore
         $_SESSION = [];
         if (session_status() === PHP_SESSION_ACTIVE) {
             $p = session_get_cookie_params();
-            setcookie(session_name(), '', [
+            setcookie((string) session_name(), '', [
                 'expires' => time() - 3600, 'path' => $p['path'], 'secure' => $p['secure'],
                 'httponly' => true, 'samesite' => 'Strict',
             ]);

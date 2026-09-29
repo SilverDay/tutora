@@ -182,6 +182,10 @@ final class WallService
         return true;
     }
 
+    /**
+     * @param array<string,mixed> $card
+     * @param array<string,mixed> $config
+     */
     private function applyMove(PDO $pdo, array $card, array $config, mixed $columnId, mixed $position): void
     {
         if (!is_string($columnId) || !in_array($columnId, array_column($config['columns'], 'id'), true)) {
@@ -217,7 +221,11 @@ final class WallService
         return json_decode((string) $row['config_snapshot'], true, 64, JSON_THROW_ON_ERROR);
     }
 
-    /** @return array{string,string} */
+    /**
+     * @return array{string,string}
+     *
+     * @param array<string,mixed> $config
+     */
     private static function validateCard(array $config, mixed $text, mixed $columnId): array
     {
         $clean = Text::clean($text, Limits::WALL_CARD, true);

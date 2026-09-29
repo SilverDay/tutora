@@ -26,7 +26,11 @@ final class Migrator
                 applied_at DATETIME(3) NOT NULL
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci'
         );
-        $applied = $this->pdo->query('SELECT name FROM schema_migrations')->fetchAll(PDO::FETCH_COLUMN);
+        $stmt = $this->pdo->query('SELECT name FROM schema_migrations');
+        if ($stmt === false) {
+            throw new \RuntimeException('Could not read schema_migrations');
+        }
+        $applied = $stmt->fetchAll(PDO::FETCH_COLUMN);
         $applied = array_flip($applied);
 
         $files = glob(rtrim($this->directory, '/') . '/[0-9][0-9][0-9][0-9]_*.sql') ?: [];

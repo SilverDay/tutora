@@ -51,7 +51,7 @@ final class SmtpMailer implements Mailer
                 throw new MailException('SMTP server does not offer STARTTLS; refusing to send');
             }
             $this->command('STARTTLS', 220);
-            $ok = @stream_socket_enable_crypto($this->sock, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
+            $ok = @stream_socket_enable_crypto($this->socket(), true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT | STREAM_CRYPTO_METHOD_TLSv1_3_CLIENT);
             if ($ok !== true) {
                 throw new MailException('TLS negotiation with the SMTP server failed');
             }
@@ -152,7 +152,7 @@ final class SmtpMailer implements Mailer
         $lines = [];
         $code = 0;
         while (true) {
-            $line = fgets($this->sock, 2048);
+            $line = fgets($this->socket(), 2048);
             if ($line === false) {
                 throw new MailException('SMTP connection closed or timed out');
             }
@@ -173,10 +173,16 @@ final class SmtpMailer implements Mailer
     {
         $len = strlen($data);
         for ($written = 0; $written < $len; $written += $n) {
-            $n = fwrite($this->sock, substr($data, $written));
+            $n = fwrite($this->socket(), substr($data, $written));
             if ($n === false || $n === 0) {
                 throw new MailException('Writing to the SMTP server failed');
             }
         }
+    }
+
+    /** @return resource */
+    private function socket()
+    {
+        return $this->sock ?? throw new MailException('SMTP connection is not open');
     }
 }

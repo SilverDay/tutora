@@ -156,7 +156,7 @@ final class QuizService
     {
         $this->expireDue($p->sessionId);
         $now = $this->clock->now();
-        $result = Transaction::run($this->pdo, function (PDO $pdo) use ($p, $blockId, $questionId, $payload, $now): ?array {
+        $result = Transaction::run($this->pdo, function (PDO $pdo) use ($p, $blockId, $questionId, $payload, $now): array {
             $config = $this->lockQuiz($pdo, $p->sessionId, $blockId, null, true);
             $q = self::question($config, $questionId) ?? throw new ValidationException(['Unknown question.']);
             if ($config['pacing'] === 'tutor') {
@@ -225,7 +225,7 @@ final class QuizService
                 $status = $run['status'] ?? 'PENDING';
                 $v = ['id' => $q['id'], 'status' => $status, 'answered' => isset($answers[$q['id']])];
                 if ($status === 'OPEN') {
-                    $v['closes_at'] = $run['closes_at'] === null ? null : Time::fromDb($run['closes_at'])->format(DATE_ATOM);
+                    $v['closes_at'] = ($run['closes_at'] ?? null) === null ? null : Time::fromDb($run['closes_at'])->format(DATE_ATOM);
                 }
                 if ($status === 'REVEALED') {
                     $v['correct_answer'] = $q['correct_answer'];
@@ -404,12 +404,19 @@ final class QuizService
         return Time::fromDb((string) $s->fetchColumn());
     }
 
+    /**
+     * @param array<string,mixed> $q
+     */
     private static function deadline(array $q, DateTimeImmutable $start): ?DateTimeImmutable
     {
         return isset($q['time_limit_seconds']) ? $start->modify('+' . (int) $q['time_limit_seconds'] . ' seconds') : null;
     }
 
-    /** @return array<string,mixed>|null */
+    /**
+     * @return array<string,mixed>|null
+     *
+     * @param array<string,mixed> $config
+     */
     private static function question(array $config, string $id): ?array
     {
         foreach ($config['questions'] as $q) {

@@ -26,9 +26,7 @@ final class UploadValidator
             throw new ValidationException([sprintf('The file is larger than %d MB.', intdiv($maxBytes, 1048576))]);
         }
         $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-        $fh = fopen($path, 'rb');
-        $head = (string) fread($fh, 8);
-        fclose($fh);
+        $head = self::read($path, 0, 8);
 
         $type = null;
         if (str_starts_with($head, '%PDF-')) {
@@ -52,11 +50,8 @@ final class UploadValidator
      */
     private static function looksLikePptx(string $path, int $size): bool
     {
-        $fh = fopen($path, 'rb');
         $tailLen = min($size, 262144);
-        fseek($fh, $size - $tailLen);
-        $tail = (string) fread($fh, $tailLen);
-        fclose($fh);
+        $tail = self::read($path, $size - $tailLen, $tailLen);
         return str_contains($tail, "PK\x05\x06")
             && str_contains($tail, '[Content_Types].xml')
             && str_contains($tail, 'ppt/presentation.xml');
@@ -68,5 +63,22 @@ final class UploadValidator
         $name = basename(str_replace('\\', '/', $original));
         $name = (string) preg_replace('/[\x00-\x1F\x7F\x{202A}-\x{202E}\x{2066}-\x{2069}]/u', '', mb_check_encoding($name, 'UTF-8') ? $name : 'upload');
         return mb_substr($name === '' ? 'upload' : $name, 0, 200, 'UTF-8');
+    }
+
+    /** Bounded read; an unreadable upload is rejected (fail closed), never a TypeError. */
+    private static function read(string $path, int $offset, int $length): string
+    {
+        $fh = @fopen($path, 'rb');
+        if ($fh === false || $length < 1) {
+            throw new ValidationException(['The uploaded file could not be read.']);
+        }
+        try {
+            if ($offset > 0 && fseek($fh, $offset) !== 0) {
+                throw new ValidationException(['The uploaded file could not be read.']);
+            }
+            return (string) fread($fh, $length);
+        } finally {
+            fclose($fh);
+        }
     }
 }

@@ -65,7 +65,11 @@ final class WhiteboardService
         return $this->issue($sessionId, $blockId, 'tutor', 'tutor', $row['block_type'], $config);
     }
 
-    /** @return array{token:string, role:string, kind:string} */
+    /**
+     * @return array{token:string, role:string, kind:string}
+     *
+     * @param array<string,mixed> $config
+     */
     private function issue(int $sid, int $bid, string $actor, string $role, string $kind, array $config): array
     {
         $tags = $kind === 'annotate' ? array_column($config['tags'] ?? [], 'id') : [];

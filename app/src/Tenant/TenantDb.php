@@ -61,7 +61,7 @@ final class TenantDb
      */
     public function all(string $sql, array $params = []): array
     {
-        return $this->run($sql, $params)->fetchAll(PDO::FETCH_ASSOC);
+        return array_values($this->run($sql, $params)->fetchAll(PDO::FETCH_ASSOC));
     }
 
     public function lastInsertId(): int
