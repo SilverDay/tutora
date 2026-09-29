@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tutora\Activity;
 
 use PDO;
+use Tutora\Block\BlockConfig;
 use Tutora\Block\BlockType;
 use Tutora\Database\Transaction;
 use Tutora\Participant\ParticipantContext;
@@ -151,8 +152,50 @@ final class SubmissionService
     {
         $agg = $this->aggregate($sessionId, $sessionBlockId);
         if ($agg !== null) {
-            $this->broadcaster->broadcast($sessionId, ['type' => 'activity_aggregate_update', 'session_block_id' => $sessionBlockId, 'aggregate' => $agg]);
+            // hidden results go to the tutor only until revealed (owner decision 11)
+            $this->broadcaster->broadcast(
+                $sessionId,
+                ['type' => 'activity_aggregate_update', 'session_block_id' => $sessionBlockId, 'aggregate' => $agg],
+                $this->resultsHidden($sessionId, $sessionBlockId) ? Broadcaster::TARGET_TUTOR : null,
+            );
         }
+    }
+
+    /** True while a block's results are set to "on reveal" and the tutor has not revealed them. */
+    public function resultsHidden(int $sessionId, int $sessionBlockId): bool
+    {
+        $s = $this->pdo->prepare(
+            'SELECT b.block_type, b.config_snapshot, r.session_block_id AS revealed
+             FROM session_blocks b LEFT JOIN session_block_result_reveals r ON r.session_block_id = b.id AND r.session_id = b.session_id
+             WHERE b.id = ? AND b.session_id = ?'
+        );
+        $s->execute([$sessionBlockId, $sessionId]);
+        $b = $s->fetch();
+        if ($b === false) {
+            return false;
+        }
+        $config = json_decode((string) $b['config_snapshot'], true, 64, JSON_THROW_ON_ERROR);
+        return BlockConfig::resultsOnReveal(BlockType::from($b['block_type']), $config) && $b['revealed'] === null;
+    }
+
+    /**
+     * Tutor reveals a hidden block's results to participants (idempotent). Returns false if
+     * the block is not in the tenant's session or is not set to "on reveal".
+     */
+    public function revealResults(TenantDb $tenant, int $sessionId, int $sessionBlockId): bool
+    {
+        $b = $tenant->one(
+            'SELECT b.block_type, b.config_snapshot FROM session_blocks b JOIN sessions s ON s.id = b.session_id
+             WHERE b.id = :bid AND s.id = :sid AND s.tenant_id = :tenant_id',
+            ['bid' => $sessionBlockId, 'sid' => $sessionId],
+        );
+        if ($b === null || !BlockConfig::resultsOnReveal(BlockType::from((string) $b['block_type']), json_decode((string) $b['config_snapshot'], true, 64, JSON_THROW_ON_ERROR))) {
+            return false;
+        }
+        $this->pdo->prepare('INSERT IGNORE INTO session_block_result_reveals (session_block_id, session_id, revealed_at) VALUES (?, ?, ?)')
+            ->execute([$sessionBlockId, $sessionId, Time::toDb($this->clock->now())]);
+        $this->broadcastAggregate($sessionId, $sessionBlockId);
+        return true;
     }
 
     public static function actorBin(string $actorHex): string

@@ -177,7 +177,10 @@ Each phase ends with passing tests and is committed separately.
 | – | `whiteboard_entities` | **Removed** (see §2). |
 | – | Whiteboard sidecar approach | **Approved** (see §2). |
 
-Implementation status: 8 ✅ (migration 0006 + `SlideImportService::collectOrphans()`, called after workshop and session deletion; the Phase 9 retention purge must call it too), 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
+Implementation status: 11 ✅ (config key `"results": "live" | "on_reveal"` for poll, meter, rate, rank, word, plot,
+word_cloud, write; not Wall — its cards are the shared content — and not Quiz, which has its own reveal; reveal
+state in `session_block_result_reveals` (migration 0007); until revealed the participant state has no aggregate and
+aggregate broadcasts are tutor-only), 8 ✅ (migration 0006 + `SlideImportService::collectOrphans()`, called after workshop and session deletion; the Phase 9 retention purge must call it too), 2 ✅ (`enroll-qr.js` + vendored `qrcode-generator` 2.0.4, see `app/public/assets/vendor/README.md`), 4 ✅ (`SmtpMailer`, `SignupVerification`), 3 ✅ (`RecoveryCodes`, `bin/admin-reset-mfa.php`:
 requires operator + reason and a typed confirmation, clears TOTP and codes, audits `auth.mfa.reset`, emails the tutor).
 
 Still open (housekeeping): make `main` the default branch on GitHub; decide whether to add PHPStan as a CI-only step.

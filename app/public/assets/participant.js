@@ -337,7 +337,10 @@ function renderQuiz(c, view) {
 function updateDynamic(block) {
   const s = block.state;
   if (!s) return;
-  if (s.aggregate !== undefined) {
+  if (s.results_hidden === true) {
+    document.getElementById('results').replaceChildren(
+      el('p', { class: 'muted', 'data-testid': 'results-hidden', text: 'The tutor will show the results later.' }));
+  } else if (s.aggregate !== undefined) {
     renderAggregate(document.getElementById('results'), block.type, block.config, s.aggregate);
   }
   if (block.type === 'wall') renderWall(block.config, s.cards);

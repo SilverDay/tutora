@@ -17,6 +17,16 @@ final class BlockConfig
 {
     public const CURRENT_VERSION = 1;
 
+    /** Participants see the aggregate live (default) or only after the tutor reveals it. */
+    public const RESULTS_LIVE = 'live';
+    public const RESULTS_ON_REVEAL = 'on_reveal';
+
+    /** @param array<string,mixed> $config configs stored before this key existed count as live */
+    public static function resultsOnReveal(BlockType $type, array $config): bool
+    {
+        return $type->supportsResultReveal() && ($config['results'] ?? self::RESULTS_LIVE) === self::RESULTS_ON_REVEAL;
+    }
+
     /** Config keys that must never reach participant clients (spec: Quiz rule 1). */
     private const QUIZ_SECRET_KEYS = ['correct_answer', 'tolerance'];
 
@@ -63,6 +73,9 @@ final class BlockConfig
                 'columns' => $r->items('columns', 1, 10, 'c'),
             ],
         };
+        if ($type->supportsResultReveal()) {
+            $out['results'] = $r->enum('results', [self::RESULTS_LIVE, self::RESULTS_ON_REVEAL], self::RESULTS_LIVE);
+        }
         $r->finish();
         $r->throwIfInvalid();
         return array_filter($out, static fn ($v) => $v !== null);

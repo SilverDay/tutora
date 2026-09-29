@@ -114,6 +114,10 @@ wall:       {"prompt": "Retro", "columns": ["Good", "Improve"]}
 quiz:       {"pacing": "tutor", "questions": [{"type": "single", "prompt": "2+2?", "options": ["3", "4"], "correct_answer": "o2", "time_limit_seconds": 20}]}
 whiteboard: {"mode": "presenter"}
 annotate:   {"prompt": "Label the diagram", "tags": ["Risk", "Asset"]}
+
+Hide results from participants until you reveal them (poll, meter, rate, rank, word, plot,
+word_cloud, write): add "results": "on_reveal" (default "live"), e.g.
+poll:       {"question": "Guess first!", "options": ["A", "B"], "results": "on_reveal"}
 TXT) ?></pre>
     </details>
 </section>

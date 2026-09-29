@@ -20,6 +20,15 @@ enum BlockType: string
     case Write = 'write';
     case Wall = 'wall';
 
+    /**
+     * Types with an anonymous aggregate the tutor can hide until revealed (owner decision 11;
+     * Wall cards are the shared content itself, Quiz has its own reveal).
+     */
+    public function supportsResultReveal(): bool
+    {
+        return $this->usesGenericSubmissions();
+    }
+
     /** Types whose participant input goes to the generic block_submissions table. */
     public function usesGenericSubmissions(): bool
     {

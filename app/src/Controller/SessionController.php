@@ -64,6 +64,13 @@ final class SessionController
         });
     }
 
+    /** Shows a block's hidden results to participants (owner decision 11). */
+    public function revealResults(Request $r, TenantContext $t): Response
+    {
+        $id = $r->intParam('id');
+        return $this->act($id, fn (): bool => $this->submissions->revealResults($this->tenantDb, $id, self::intInput($r, 'block')));
+    }
+
     /** Client-side captured PNG of the rendered board (raw image/png body). */
     public function uploadSnapshot(Request $r, TenantContext $t): Response
     {

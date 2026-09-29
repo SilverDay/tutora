@@ -24,7 +24,21 @@ final class BlockConfigTest extends TestCase
     public function testPollNormalisesAndAssignsIds(): void
     {
         $c = BlockConfig::validate(BlockType::Poll, ['question' => ' Best? ', 'options' => ['A', ['id' => 'b', 'label' => 'B']]]);
-        self::assertSame(['question' => 'Best?', 'options' => [['id' => 'o1', 'label' => 'A'], ['id' => 'b', 'label' => 'B']], 'min_selections' => 1, 'max_selections' => 1], $c);
+        self::assertSame(['question' => 'Best?', 'options' => [['id' => 'o1', 'label' => 'A'], ['id' => 'b', 'label' => 'B']], 'min_selections' => 1, 'max_selections' => 1, 'results' => 'live'], $c);
+    }
+
+    public function testResultsVisibilitySetting(): void
+    {
+        self::assertSame('on_reveal', BlockConfig::validate(BlockType::Poll, ['question' => 'q', 'options' => ['a', 'b'], 'results' => 'on_reveal'])['results']);
+        self::assertSame('live', BlockConfig::validate(BlockType::Write, ['prompt' => 'p'])['results'], 'default live');
+        self::assertNotEmpty(self::errors(BlockType::Poll, ['question' => 'q', 'options' => ['a', 'b'], 'results' => 'never']));
+        // not for Wall (shared content), Quiz (own reveal) or display-only blocks
+        self::assertNotEmpty(self::errors(BlockType::Wall, ['columns' => ['A'], 'results' => 'on_reveal']));
+        self::assertNotEmpty(self::errors(BlockType::Quiz, ['pacing' => 'tutor', 'questions' => [], 'results' => 'on_reveal']));
+        self::assertNotEmpty(self::errors(BlockType::Slide, ['results' => 'on_reveal']));
+        self::assertFalse(BlockConfig::resultsOnReveal(BlockType::Poll, ['question' => 'q']), 'configs stored before the key existed are live');
+        self::assertTrue(BlockConfig::resultsOnReveal(BlockType::Meter, ['results' => 'on_reveal']));
+        self::assertFalse(BlockConfig::resultsOnReveal(BlockType::Wall, ['results' => 'on_reveal']));
     }
 
     public function testUnknownKeysRejected(): void

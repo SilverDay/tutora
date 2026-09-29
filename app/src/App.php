@@ -172,6 +172,7 @@ final class App
         $r->add('POST', '/sessions/{id:\d+}/wall/cards', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallAdd($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/wall/cards/{card:\d+}/delete', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->wallDelete($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/moderation/remove-actor', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->removeActor($q, $t)));
+        $r->add('POST', '/sessions/{id:\d+}/results/reveal', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->revealResults($q, $t)));
         $r->add('POST', '/sessions/{id:\d+}/whiteboard/clear', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->clearBoard($q, $t)));
         $r->add('GET', '/snapshots/{snapshot:\d+}', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->snapshotImage($q, $t)));
         $r->add('POST', '/api/tutor/sessions/{id:\d+}/blocks/{block:\d+}/whiteboard-token', $this->tutor(fn (Request $q, TenantContext $t) => $ss($t)->whiteboardToken($q, $t)));

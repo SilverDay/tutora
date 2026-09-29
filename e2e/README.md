@@ -14,6 +14,9 @@ whiteboard sidecar running.
 and checks that the other is signed out and that the relay closed its open connection (takes ~1 min: it
 waits for fresh TOTP steps because codes are single-use).
 
+`results-reveal.e2e.mjs` checks the per-block "hide results until I reveal them" switch: no count in
+participant pages or in the WebSocket frames they receive until the tutor reveals, then live.
+
 `activities.e2e.mjs` drives the real UI in Chromium against a running stack: tutor signup
 with TOTP, workshop authoring, a live session with two participants, every activity type,
 both quiz modes, live updates over the relay, Write privacy, wall moderation, and it fails

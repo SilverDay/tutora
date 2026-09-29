@@ -16,6 +16,9 @@ use Tutora\Tenant\TenantDb;
 use Tutora\Tests\Support\Fixtures;
 use Tutora\Tests\Support\LiveSession;
 use Tutora\Tests\Support\TestDatabase;
+use Tutora\Activity\BlockStates;
+use Tutora\Activity\QuizService;
+use Tutora\Activity\WallService;
 
 final class SubmissionServiceTest extends TestCase
 {
@@ -140,5 +143,50 @@ final class SubmissionServiceTest extends TestCase
         $this->svc->submit($a, $this->live->blocks[0], ['selected' => ['o1']]);
         $exp = $this->live->pdo->query("SELECT resume_token_expires_at FROM session_participants WHERE id = {$a->participantId}")->fetchColumn();
         self::assertSame('2026-03-01 10:55:00.000', $exp);
+    }
+
+    public function testHiddenResultsReachOnlyTheTutorUntilRevealed(): void
+    {
+        $pdo = TestDatabase::reset();
+        $clock = new FrozenClock('2026-03-01 10:00:00');
+        $bc = new NullBroadcaster();
+        $live = new LiveSession($pdo, $clock, $bc, [
+            [BlockType::Poll, ['question' => 'Guess?', 'options' => ['Yes', 'No'], 'results' => 'on_reveal']],
+            [BlockType::Poll, ['question' => 'Live?', 'options' => ['Yes', 'No']]],
+        ]);
+        $svc = new SubmissionService($pdo, $clock, $bc, $live->participants);
+        $states = new BlockStates($svc, new WallService($pdo, $clock, $bc, $live->participants), new QuizService($pdo, $clock, $bc, $live->participants));
+        [$hidden, $visible] = $live->blocks;
+        $a = $live->join();
+
+        $svc->submit($a, $hidden, ['selected' => ['o1']]);
+        $last = end($bc->sent);
+        self::assertSame('tutor', $last[2], 'aggregate of a hidden block goes to the tutor only');
+        self::assertTrue($svc->resultsHidden($live->sessionId, $hidden));
+        $p = $states->forParticipant($a, $hidden, BlockType::Poll);
+        self::assertNull($p['aggregate']);
+        self::assertTrue($p['results_hidden']);
+        self::assertSame(['selected' => ['o1']], $p['mine'], 'own answer still shown');
+        $t = $states->forTutor($live->tenantDb, $live->sessionId, $hidden, BlockType::Poll);
+        self::assertSame(1, $t['aggregate']['responses']);
+        self::assertTrue($t['results_hidden']);
+
+        // other tenant cannot reveal; a live block is not "revealable"
+        $other = new TenantDb($pdo, TenantContext::forAuthenticatedTutor(Fixtures::tenant($pdo, 'other@example.org')));
+        self::assertFalse($svc->revealResults($other, $live->sessionId, $hidden));
+        self::assertFalse($svc->revealResults($live->tenantDb, $live->sessionId, $visible));
+        self::assertTrue($svc->resultsHidden($live->sessionId, $hidden));
+
+        self::assertTrue($svc->revealResults($live->tenantDb, $live->sessionId, $hidden));
+        $last = end($bc->sent);
+        self::assertNull($last[2], 'revealed aggregate goes to everyone');
+        self::assertSame(1, $last[1]['aggregate']['responses']);
+        self::assertFalse($svc->resultsHidden($live->sessionId, $hidden));
+        self::assertSame(1, $states->forParticipant($a, $hidden, BlockType::Poll)['aggregate']['responses']);
+        self::assertTrue($svc->revealResults($live->tenantDb, $live->sessionId, $hidden), 'idempotent');
+
+        $live->goTo(1);
+        $svc->submit($a, $visible, ['selected' => ['o2']]);
+        self::assertNull(end($bc->sent)[2], 'live block unchanged');
     }
 }

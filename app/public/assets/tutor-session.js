@@ -49,6 +49,13 @@ function render(block) {
   results.replaceChildren();
   if (!block || !block.state) return;
   const s = block.state;
+  if (s.results_hidden === true) {
+    results.append(el('p', { class: 'notice', 'data-testid': 'results-hidden' },
+      'Results are hidden from participants. ',
+      postForm(`/sessions/${encodeURIComponent(sessionId)}/results/reveal`, { block: String(block.id) }, 'Reveal results to participants')));
+  } else if (block.config?.results === 'on_reveal') {
+    results.append(el('p', { class: 'muted', 'data-testid': 'results-revealed', text: 'Results are visible to participants.' }));
+  }
   const agg = el('div');
   if (s.aggregate !== undefined) renderAggregate(agg, block.type, block.config, s.aggregate);
   results.append(agg);
