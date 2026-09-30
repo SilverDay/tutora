@@ -76,6 +76,18 @@ final class App
      */
     private const CSRF_EXEMPT_PREFIXES = ['/api/participant/'];
 
+    /** Public pages: path => [template, title]. */
+    public const PUBLIC_PAGES = [
+        '/' => ['pages/home', 'Live workshops'],
+        '/features' => ['pages/features', 'Features'],
+        '/about' => ['pages/about', 'About'],
+        '/faq' => ['pages/faq', 'FAQ'],
+        '/privacy' => ['pages/privacy', 'Privacy policy'],
+        '/terms' => ['pages/terms', 'Terms of use'],
+        '/cookies' => ['pages/cookies', 'Cookies and storage'],
+        '/imprint' => ['pages/imprint', 'Imprint'],
+    ];
+
     private ?PDO $pdo = null;
     private ?TutorAuthService $auth = null;
     private ?Broadcaster $broadcaster = null;
@@ -127,7 +139,10 @@ final class App
         $auth = fn () => new AuthController($this->auth(), $this->view);
         $r = $this->router;
 
-        $r->add('GET', '/', fn () => Response::redirect($this->auth()->currentTenant() ? '/dashboard' : '/login'));
+        // public pages (no database access, so they stay reachable when the database is down)
+        foreach (self::PUBLIC_PAGES as $path => [$template, $title]) {
+            $r->add('GET', $path, fn () => $this->publicPage($template, $title));
+        }
         $r->add('GET', '/login', fn (Request $q) => $auth()->showLogin($q));
         $r->add('POST', '/login', fn (Request $q) => $auth()->login($q));
         $r->add('GET', '/signup', fn (Request $q) => $auth()->showSignup($q));
@@ -230,6 +245,17 @@ final class App
             $this->view->share('maxLiveHours', $this->config->int('SESSION_MAX_LIVE_HOURS', 24));
             return $handler($request, $tenant)->withHeader('Cache-Control', 'no-store');
         };
+    }
+
+    private function publicPage(string $template, string $title): Response
+    {
+        $this->view->share('signedIn', TutorAuthService::hasFullSession($this->session));
+        return $this->view->render($template, [
+            'title' => $title,
+            'retentionDays' => $this->config->int('RETENTION_DAYS_DEFAULT', 30),
+            'maxLiveHours' => $this->config->int('SESSION_MAX_LIVE_HOURS', 24),
+            'uploadMaxMb' => intdiv($this->config->int('UPLOAD_MAX_BYTES', 50 * 1048576), 1048576),
+        ]);
     }
 
     private function error(Request $request, int $status, string $message): Response

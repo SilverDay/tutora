@@ -15,7 +15,7 @@
 <header class="topbar">
     <a class="brand" href="/">Tutora</a>
     <?php if ($signedIn): ?>
-        <nav>
+        <nav aria-label="Account">
             <a href="/dashboard">Dashboard</a>
             <a href="/account/password">Account</a>
             <form method="post" action="/logout" class="inline">
@@ -23,10 +23,19 @@
                 <button type="submit" class="link">Sign out</button>
             </form>
         </nav>
+    <?php else: ?>
+        <nav aria-label="Main">
+            <a href="/features">Features</a>
+            <a href="/about">About</a>
+            <a href="/faq">FAQ</a>
+            <a href="/join">Join a session</a>
+            <a href="/login">Sign in</a>
+        </nav>
     <?php endif; ?>
 </header>
 <main class="container">
 <?= $content /* pre-rendered, already encoded template output */ ?>
 </main>
+<?= $partial('_footer') ?>
 </body>
 </html>

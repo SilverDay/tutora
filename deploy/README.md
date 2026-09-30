@@ -36,6 +36,10 @@ Still manual (printed at the end): DNS, firewall (22/80/443), alerting via `OnFa
 a test signup to confirm mail delivery, and keeping `install-offhost.sh` in step with production
 updates (its `/opt/tutora` migrations are the restore test's schema reference).
 
+Before going live, also complete the legal placeholder pages (not checked by the installer): every
+`[TODO]` in `app/templates/pages/{privacy,terms,cookies,imprint}.php` and the operator name in
+`about.php`, reviewed by a lawyer.
+
 ### Without an off-host machine
 
 `install-offhost.sh` is optional. `install.sh` only needs an OpenPGP public key that can encrypt

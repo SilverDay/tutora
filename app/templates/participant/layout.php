@@ -16,5 +16,6 @@
 <main class="container">
 <?= $content /* pre-rendered, already encoded template output */ ?>
 </main>
+<?= $partial('_footer') ?>
 </body>
 </html>

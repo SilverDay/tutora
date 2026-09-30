@@ -29,6 +29,8 @@ decision taken on top of the spec, are in [`docs/IMPLEMENTATION_PLAN.md`](docs/I
 - CSV export of a session
 - Configurable data retention (default 30 days). A session is ended automatically 24 h after it starts
 
+**Public pages:** landing page, features, about and FAQ, plus placeholder legal pages (privacy policy, terms of use, cookies, imprint) in `app/templates/pages/`. Every `[TODO]` in the legal pages must be completed and legally reviewed before going live.
+
 ## Architecture
 
 | Directory | Component |
