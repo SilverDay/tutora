@@ -309,6 +309,15 @@ final class TutorAuthService
         return TenantContext::forAuthenticatedTutor($id);
     }
 
+    /**
+     * Presentation hint for public pages ("show a Dashboard link"), read from the session only —
+     * no database, no idle/epoch checks. Never use it for authorization: currentTenant() does that.
+     */
+    public static function hasFullSession(SessionStore $session): bool
+    {
+        return is_int($session->get(self::S_TENANT)) && $session->get(self::S_STAGE) === AuthStage::Full->value;
+    }
+
     public function currentStage(): ?AuthStage
     {
         $s = $this->session->get(self::S_STAGE);
